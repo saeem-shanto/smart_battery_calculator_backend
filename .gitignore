@@ -1,0 +1,12 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+db.sqlite3
+staticfiles/
+media/*
+!media/.gitkeep
+.pytest_cache/
+.DS_Store
+smart-battery-backend-static-fixed.zip
+smart-battery-backend-cors-fixed.zip

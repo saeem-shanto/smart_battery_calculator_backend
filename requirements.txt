@@ -1,0 +1,17 @@
+Django>=5.2,<6.1
+djangorestframework>=3.16,<3.18
+djangorestframework-simplejwt>=5.4,<6
+drf-spectacular[sidecar]>=0.28,<1
+django-cors-headers>=4.7,<5
+django-environ>=0.12,<1
+dj-database-url>=3.0,<4
+psycopg[binary]>=3.2,<4
+scipy>=1.15,<2
+numpy>=2.2,<3
+pandas>=2.2,<3
+openpyxl>=3.1,<4
+xlrd>=2.0,<3
+python-dateutil>=2.9,<3
+requests>=2.32,<3
+gunicorn>=23,<24
+whitenoise>=6.9,<7
