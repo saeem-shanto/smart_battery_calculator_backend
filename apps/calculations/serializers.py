@@ -36,3 +36,21 @@ class CalculationResponseSerializer(serializers.Serializer):
     algorithm_version=serializers.CharField()
     runtime_ms=serializers.IntegerField()
     created_at=serializers.DateTimeField()
+
+
+class ClientWorkbookCalculationSerializer(serializers.Serializer):
+    file = serializers.FileField()
+    consent = serializers.BooleanField()
+    pv_size_kw = serializers.FloatField(min_value=0, max_value=50, default=5)
+    battery_annual_cost_per_kwh = serializers.FloatField(min_value=0, max_value=1000, default=50)
+    battery_installed_cost_per_kwh = serializers.FloatField(min_value=0, max_value=10000, default=1000)
+    retail_price_per_kwh = serializers.FloatField(min_value=0, max_value=5, default=0.3773)
+    feed_in_tariff_per_kwh = serializers.FloatField(min_value=0, max_value=5, default=0.124)
+    max_battery_capacity_kwh = serializers.FloatField(min_value=0.1, max_value=200, default=50)
+
+    def validate_consent(self, value):
+        if value is not True:
+            raise serializers.ValidationError(
+                "Consent to temporary processing of the uploaded household data is required."
+            )
+        return value

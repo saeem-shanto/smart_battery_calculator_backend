@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Protocol
 
+
 @dataclass
 class EngineInput:
     load_kwh: list[float]
@@ -14,7 +15,10 @@ class EngineInput:
     battery_installed_cost_per_kwh: float
     max_capacity_kwh: float
     pv_size_kw: float
+    pv_profile_is_legacy_base: bool = False
+
 
 class CalculationEngine(Protocol):
     version: str
+
     def calculate(self, data: EngineInput) -> dict: ...

@@ -13,7 +13,7 @@ env = environ.Env()
 environ.Env.read_env(BASE_DIR / ".env")
 
 SECRET_KEY = env("SECRET_KEY", default="unsafe-dev-key-change-me")
-DEBUG = env.bool("DEBUG", default=True)
+DEBUG = False
 
 ALLOWED_HOSTS = [
     item.strip()
@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "apps.calculations",
     "apps.feedback",
     "apps.dashboard",
+    "apps.octave",
 ]
 
 # Ordering matters:
@@ -86,9 +87,7 @@ DATABASES = {
 }
 
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
-    },
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
@@ -180,10 +179,10 @@ SIMPLE_JWT = {
 SPECTACULAR_SETTINGS = {
     "TITLE": "Smart Solar Battery Calculator API",
     "DESCRIPTION": (
-        "Public battery-calculation API plus admin-only management endpoints "
-        "for Project N01."
+        "Public battery-calculation API using the client MATLAB-compatible optimisation "
+        "through GNU Octave, plus admin-only management endpoints for Project N01."
     ),
-    "VERSION": "1.1.0",
+    "VERSION": "2.1.0-octave",
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
     # Serve Swagger/Redoc locally via Django staticfiles instead of a CDN.
@@ -200,8 +199,27 @@ SPECTACULAR_SETTINGS = {
 # -----------------------------------------------------------------------------
 # Application settings
 # -----------------------------------------------------------------------------
-CALCULATION_ENGINE = env("CALCULATION_ENGINE", default="reference_python")
-MATLAB_ENGINE_URL = env("MATLAB_ENGINE_URL", default="http://localhost:8081/calculate")
-MATLAB_ENGINE_TIMEOUT_SECONDS = env.int("MATLAB_ENGINE_TIMEOUT_SECONDS", default=90)
+CALCULATION_ENGINE = env("CALCULATION_ENGINE", default="octave")
+
+# GNU Octave executes the client's MATLAB-compatible .m algorithm without a
+# MATLAB installation or MATLAB Runtime on the web server. Calls are serialized
+# by default because Render Free has a small 512 MB memory limit.
+OCTAVE_EXECUTABLE = env("OCTAVE_EXECUTABLE", default="octave-cli")
+OCTAVE_TIMEOUT_SECONDS = env.int("OCTAVE_TIMEOUT_SECONDS", default=120)
+OCTAVE_SERIALIZE_CALLS = env.bool("OCTAVE_SERIALIZE_CALLS", default=True)
+OCTAVE_TEST_ENABLED = env.bool("OCTAVE_TEST_ENABLED", default=False)
+
+# Legacy compiled-MATLAB settings are retained only so an existing deployment
+# can still select CALCULATION_ENGINE=matlab_compiled if desired.
+MATLAB_SDK_PACKAGE = env("MATLAB_SDK_PACKAGE", default="smartbatterymatlab")
+MATLAB_SDK_FUNCTION = env("MATLAB_SDK_FUNCTION", default="smart_battery_optimize")
+MATLAB_RUNTIME_OPTIONS = tuple(
+    item.strip()
+    for item in env("MATLAB_RUNTIME_OPTIONS", default="-nojvm,-nodisplay").split(",")
+    if item.strip()
+)
+MATLAB_SERIALIZE_CALLS = env.bool("MATLAB_SERIALIZE_CALLS", default=True)
+MATLAB_SDK_TEST_ENABLED = env.bool("MATLAB_SDK_TEST_ENABLED", default=False)
+
 PROFILE_UPLOAD_TTL_HOURS = env.int("PROFILE_UPLOAD_TTL_HOURS", default=24)
 PROFILE_UPLOAD_MAX_MB = env.int("PROFILE_UPLOAD_MAX_MB", default=15)

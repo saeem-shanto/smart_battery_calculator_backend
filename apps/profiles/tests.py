@@ -20,3 +20,31 @@ class ProfileParserTests(SimpleTestCase):
         parsed = parse_profile_file(upload, "combined", "energy_kwh_interval", 60)
         self.assertEqual(parsed.pv_values, [0.1, 0.2])
         self.assertEqual(parsed.load_values, [0.5, 0.6])
+
+
+class ClientWorkbookParserTests(SimpleTestCase):
+    def test_client_two_column_csv(self):
+        from .client_workbook import parse_client_workbook
+
+        upload = SimpleUploadedFile(
+            "client.csv",
+            b"0.1,0.5\n0.2,0.6\n",
+            content_type="text/csv",
+        )
+        parsed = parse_client_workbook(upload)
+        self.assertEqual(parsed.detected_format, "client_two_column_csv")
+        self.assertEqual(parsed.pv_base_profile, [0.1, 0.2])
+        self.assertEqual(parsed.load_profile, [0.5, 0.6])
+        self.assertEqual(parsed.row_count, 2)
+
+    def test_client_header_row_is_allowed(self):
+        from .client_workbook import parse_client_workbook
+
+        upload = SimpleUploadedFile(
+            "client.csv",
+            b"pv,load\n0.1,0.5\n0.2,0.6\n",
+            content_type="text/csv",
+        )
+        parsed = parse_client_workbook(upload)
+        self.assertEqual(parsed.row_count, 2)
+        self.assertTrue(any("header" in warning.lower() for warning in parsed.warnings))

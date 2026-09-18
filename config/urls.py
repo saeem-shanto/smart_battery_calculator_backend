@@ -10,15 +10,17 @@ from drf_spectacular.views import (
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from apps.common.auth import AdminTokenObtainPairView
-from apps.common.views import health
+from apps.common.views import health, root
 
 urlpatterns = [
+    path("", root, name="root"),
     path("django-admin/", admin.site.urls),
     path("api/v1/health/", health, name="health"),
     path("api/v1/tariffs/", include("apps.tariffs.urls")),
     path("api/v1/profiles/", include("apps.profiles.urls")),
     path("api/v1/calculations/", include("apps.calculations.urls")),
     path("api/v1/feedback/", include("apps.feedback.urls")),
+    path("api/v1/octave/", include("apps.octave.urls")),
     path("api/v1/admin/auth/token/", AdminTokenObtainPairView.as_view(), name="admin-token"),
     path(
         "api/v1/admin/auth/token/refresh/",

@@ -3,10 +3,9 @@ import io
 import math
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from dateutil import parser as dtparser
-import pandas as pd
 
 MAX_POINTS = 110_000
 
@@ -95,7 +94,7 @@ def _parse_nem12(rows, role):
                 d = dtparser.parse(date_text)
                 for i in range(len(dayvals)):
                     timestamps.append(
-                        (d + pd.Timedelta(minutes=i * current_interval)).isoformat()
+                        (d + timedelta(minutes=i * current_interval)).isoformat()
                     )
             except Exception:
                 timestamps = []
@@ -135,7 +134,7 @@ def _parse_table(rows, role, value_kind, interval_minutes):
                 try:
                     d=dtparser.parse(str(row[date_idx]))
                     inferred=interval_minutes or int(24*60/max(1,len(dayvals)))
-                    stamps.extend([(d+pd.Timedelta(minutes=j*inferred)).isoformat() for j in range(len(dayvals))])
+                    stamps.extend([(d+timedelta(minutes=j*inferred)).isoformat() for j in range(len(dayvals))])
                 except Exception: pass
         interval=interval_minutes or int(24*60/max(1,len(value_idxs)))
         _validate_values(vals, role)
@@ -185,6 +184,9 @@ def parse_profile_file(uploaded_file, role, value_kind="auto", interval_minutes=
     suffix=Path(uploaded_file.name).suffix.lower()
     raw=uploaded_file.read()
     if suffix in {".xls",".xlsx"}:
+        # Spreadsheet parsing is relatively heavy; import pandas only when this
+        # generic upload path actually receives an Excel file.
+        import pandas as pd
         engine="xlrd" if suffix==".xls" else "openpyxl"
         df=pd.read_excel(io.BytesIO(raw), engine=engine, header=None)
         rows=[["" if pd.isna(v) else v for v in row] for row in df.values.tolist()]

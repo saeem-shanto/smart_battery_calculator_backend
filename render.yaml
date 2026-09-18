@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: smart-battery-api
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/v1/health/
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: CALCULATION_ENGINE
+        value: octave
+      - key: OCTAVE_EXECUTABLE
+        value: octave-cli
+      - key: OCTAVE_TIMEOUT_SECONDS
+        value: "120"
+      - key: OCTAVE_SERIALIZE_CALLS
+        value: "True"
+      - key: OCTAVE_TEST_ENABLED
+        value: "True"
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: CSRF_TRUSTED_ORIGINS
+        sync: false

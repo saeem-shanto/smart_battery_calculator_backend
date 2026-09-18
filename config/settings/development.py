@@ -8,3 +8,4 @@ WHITENOISE_AUTOREFRESH = True
 WHITENOISE_USE_FINDERS = True
 
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
