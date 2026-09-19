@@ -21,6 +21,9 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY --chown=app:app . .
+
+# Ensure staticfiles directory exists with correct write permissions for user 'app'
+RUN mkdir -p /app/staticfiles && chown -R app:app /app/staticfiles
 RUN chmod +x scripts/entrypoint.sh
 
 USER app
