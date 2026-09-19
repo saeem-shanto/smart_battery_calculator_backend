@@ -45,10 +45,7 @@ def email_security_available() -> bool:
     backend = getattr(settings, "EMAIL_BACKEND", "")
     if backend.endswith("console.EmailBackend"):
         return True
-    return bool(
-        getattr(settings, "EMAIL_HOST_USER", "")
-        and getattr(settings, "EMAIL_HOST_PASSWORD", "")
-    )
+    return bool(getattr(settings, "EMAIL_HOST_USER", "") and getattr(settings, "EMAIL_HOST_PASSWORD", ""))
 
 
 def mask_email(email: str) -> str:
@@ -124,9 +121,7 @@ def _otp_email(user, code: str, purpose: str) -> tuple[str, str, str]:
 
 def create_two_factor_challenge(user, purpose: str) -> ChallengeResult:
     if not user.email:
-        raise EmailSecurityUnavailable(
-            "An email address is required for two-factor authentication."
-        )
+        raise EmailSecurityUnavailable("An email address is required for two-factor authentication.")
     if not email_security_available():
         raise EmailSecurityUnavailable("Email security features are not configured.")
 
@@ -154,9 +149,7 @@ def create_two_factor_challenge(user, purpose: str) -> ChallengeResult:
     try:
         _send_email(subject, user.email, text, html)
     except Exception:
-        TwoFactorChallenge.objects.filter(pk=challenge.pk).update(
-            consumed_at=timezone.now()
-        )
+        TwoFactorChallenge.objects.filter(pk=challenge.pk).update(consumed_at=timezone.now())
         raise
 
     return ChallengeResult(
@@ -174,37 +167,25 @@ def resend_two_factor_challenge(challenge_id: str) -> ChallengeResult:
     resend_after = int(getattr(settings, "TWO_FACTOR_OTP_RESEND_SECONDS", 60))
 
     with transaction.atomic():
-        challenge = (
-            TwoFactorChallenge.objects.select_for_update()
-            .select_related("user")
-            .get(pk=challenge_id)
-        )
+        challenge = TwoFactorChallenge.objects.select_for_update().select_related("user").get(pk=challenge_id)
         if challenge.consumed_at is not None or challenge.expires_at <= now:
-            raise ValueError(
-                "This verification challenge has expired. Please sign in again."
-            )
+            raise ValueError("This verification challenge has expired. Please sign in again.")
         elapsed = (now - challenge.last_sent_at).total_seconds()
         if elapsed < resend_after:
             wait = max(1, int(resend_after - elapsed))
-            raise RuntimeError(
-                f"Please wait {wait} seconds before requesting another code."
-            )
+            raise RuntimeError(f"Please wait {wait} seconds before requesting another code.")
         code = _new_code()
         challenge.code_digest = _otp_digest(str(challenge.id), code)
         challenge.expires_at = now + timedelta(seconds=ttl_seconds)
         challenge.last_sent_at = now
         challenge.attempts = 0
-        challenge.save(
-            update_fields=["code_digest", "expires_at", "last_sent_at", "attempts"]
-        )
+        challenge.save(update_fields=["code_digest", "expires_at", "last_sent_at", "attempts"])
 
     subject, text, html = _otp_email(challenge.user, code, challenge.purpose)
     try:
         _send_email(subject, challenge.user.email, text, html)
     except Exception:
-        TwoFactorChallenge.objects.filter(pk=challenge.pk).update(
-            consumed_at=timezone.now()
-        )
+        TwoFactorChallenge.objects.filter(pk=challenge.pk).update(consumed_at=timezone.now())
         raise
     return ChallengeResult(
         challenge_id=str(challenge.id),
@@ -215,29 +196,19 @@ def resend_two_factor_challenge(challenge_id: str) -> ChallengeResult:
     )
 
 
-def verify_two_factor_challenge(
-    challenge_id: str, code: str, allowed_purposes: set[str] | None = None
-):
+def verify_two_factor_challenge(challenge_id: str, code: str, allowed_purposes: set[str] | None = None):
     now = timezone.now()
     max_attempts = int(getattr(settings, "TWO_FACTOR_OTP_MAX_ATTEMPTS", 5))
     with transaction.atomic():
-        challenge = (
-            TwoFactorChallenge.objects.select_for_update()
-            .select_related("user")
-            .get(pk=challenge_id)
-        )
+        challenge = TwoFactorChallenge.objects.select_for_update().select_related("user").get(pk=challenge_id)
         if allowed_purposes and challenge.purpose not in allowed_purposes:
-            raise ValueError(
-                "This verification challenge is not valid for this action."
-            )
+            raise ValueError("This verification challenge is not valid for this action.")
         if challenge.consumed_at is not None:
             raise ValueError("This verification code has already been used.")
         if challenge.expires_at <= now:
             challenge.consumed_at = now
             challenge.save(update_fields=["consumed_at"])
-            raise ValueError(
-                "This verification code has expired. Please request a new one."
-            )
+            raise ValueError("This verification code has expired. Please request a new one.")
         if challenge.attempts >= max_attempts:
             challenge.consumed_at = now
             challenge.save(update_fields=["consumed_at"])
@@ -252,9 +223,7 @@ def verify_two_factor_challenge(
             else:
                 challenge.save(update_fields=["attempts"])
             remaining = max(0, max_attempts - challenge.attempts)
-            raise PermissionError(
-                f"Incorrect verification code. {remaining} attempt(s) remaining."
-            )
+            raise PermissionError(f"Incorrect verification code. {remaining} attempt(s) remaining.")
 
         challenge.consumed_at = now
         challenge.save(update_fields=["consumed_at"])

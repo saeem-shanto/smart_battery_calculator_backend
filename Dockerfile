@@ -21,10 +21,15 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY --chown=app:app . .
-RUN chmod +x scripts/entrypoint.sh
+
+# WORKDIR /app is created as root. Pre-create all runtime-writable directories
+# and hand ownership to the unprivileged application user before USER app.
+RUN mkdir -p /app/staticfiles /app/media \
+    && chown -R app:app /app \
+    && chmod +x /app/scripts/entrypoint.sh
 
 USER app
 EXPOSE 8000
 ENTRYPOINT ["./scripts/entrypoint.sh"]
 
-CMD ["sh", "-c", "gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 1 --worker-class gthread --threads 2 --timeout 180 --graceful-timeout 30 --max-requests 50 --max-requests-jitter 10 --access-logfile - --error-logfile -"]
+CMD ["sh", "-c", "gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 1 --worker-class gthread --threads 2 --timeout 360 --graceful-timeout 30 --max-requests 50 --max-requests-jitter 10 --access-logfile - --error-logfile -"]
