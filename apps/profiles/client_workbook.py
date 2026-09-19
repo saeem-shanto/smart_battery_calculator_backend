@@ -6,6 +6,8 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
+from django.conf import settings
+
 
 class ClientWorkbookError(ValueError):
     pass
@@ -24,7 +26,8 @@ def _empty(value) -> bool:
     return value is None or (isinstance(value, str) and not value.strip())
 
 
-def _read_rows(name: str, raw: bytes) -> tuple[list[list], str]:
+def _read_rows(name: str, raw: bytes) -> tuple[list[list], str, int]:
+    """Read only the first two data columns while retaining source column count."""
     suffix = Path(name).suffix.lower()
     try:
         if suffix == ".xls":
@@ -33,13 +36,14 @@ def _read_rows(name: str, raw: bytes) -> tuple[list[list], str]:
             book = xlrd.open_workbook(file_contents=raw, on_demand=True)
             try:
                 sheet = book.sheet_by_index(0)
+                max_columns = int(sheet.ncols)
                 rows = [
-                    [sheet.cell_value(r, c) for c in range(sheet.ncols)]
+                    [sheet.cell_value(r, c) for c in range(min(sheet.ncols, 2))]
                     for r in range(sheet.nrows)
                 ]
             finally:
                 book.release_resources()
-            return rows, "xls"
+            return rows, "xls", max_columns
 
         if suffix == ".xlsx":
             from openpyxl import load_workbook
@@ -47,18 +51,26 @@ def _read_rows(name: str, raw: bytes) -> tuple[list[list], str]:
             workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
             try:
                 sheet = workbook.active
-                rows = [list(row) for row in sheet.iter_rows(values_only=True)]
+                max_columns = int(sheet.max_column or 0)
+                rows = [
+                    list(row)
+                    for row in sheet.iter_rows(min_col=1, max_col=2, values_only=True)
+                ]
             finally:
                 workbook.close()
-            return rows, "xlsx"
+            return rows, "xlsx", max_columns
 
         if suffix in {".csv", ".txt"}:
             try:
                 text = raw.decode("utf-8-sig")
             except UnicodeDecodeError:
                 text = raw.decode("latin-1")
-            rows = [list(row) for row in csv.reader(io.StringIO(text))]
-            return rows, suffix.lstrip(".")
+            rows = []
+            max_columns = 0
+            for row in csv.reader(io.StringIO(text)):
+                max_columns = max(max_columns, len(row))
+                rows.append(list(row[:2]))
+            return rows, suffix.lstrip("."), max_columns
     except ImportError as exc:
         dependency = "xlrd" if suffix == ".xls" else "openpyxl"
         raise ClientWorkbookError(
@@ -91,23 +103,28 @@ def parse_client_workbook(uploaded_file) -> ClientWorkbookData:
     A single non-numeric header row is tolerated. Empty rows are ignored and
     additional columns are ignored with a warning.
     """
+    max_bytes = settings.PROFILE_UPLOAD_MAX_MB * 1024 * 1024
+    if getattr(uploaded_file, "size", 0) and uploaded_file.size > max_bytes:
+        raise ClientWorkbookError(
+            f"File exceeds the {settings.PROFILE_UPLOAD_MAX_MB} MB upload limit."
+        )
+
     raw = uploaded_file.read()
     if hasattr(uploaded_file, "seek"):
         uploaded_file.seek(0)
     if not raw:
         raise ClientWorkbookError("The uploaded file is empty.")
 
-    rows, file_kind = _read_rows(uploaded_file.name, raw)
+    rows, file_kind, max_columns = _read_rows(uploaded_file.name, raw)
     rows = [row for row in rows if row and any(not _empty(cell) for cell in row)]
     if not rows:
         raise ClientWorkbookError("The workbook contains no data rows.")
-    if max(len(row) for row in rows) < 2:
+    if max_columns < 2:
         raise ClientWorkbookError(
             "The client workbook needs at least two columns: column 1 = PV base profile, column 2 = load."
         )
 
     warnings: list[str] = []
-    max_columns = max(len(row) for row in rows)
     if max_columns > 2:
         warnings.append(
             f"The workbook contains {max_columns} columns; only the first two are used by the client algorithm."

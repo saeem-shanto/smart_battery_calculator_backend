@@ -158,8 +158,8 @@ def _parse_table(rows, role, value_kind, interval_minutes):
             for row in data:
                 if not row: continue
                 pv.append(_num(row[0])); load.append(_num(row[1]))
-            warnings.append("No header was found; combined data was interpreted as column 1 = PV and column 2 = load, matching the supplied MATLAB workbook convention.")
-            detected = "matlab_two_column"
+            warnings.append("No header was found; combined data was interpreted as column 1 = PV and column 2 = load, matching the client two-column workbook convention.")
+            detected = "client_two_column"
         else:
             raise ProfileParseError("Combined upload needs PV and load columns (or two headerless numeric columns).")
     else:
@@ -183,16 +183,37 @@ def _parse_table(rows, role, value_kind, interval_minutes):
 def parse_profile_file(uploaded_file, role, value_kind="auto", interval_minutes=None):
     suffix=Path(uploaded_file.name).suffix.lower()
     raw=uploaded_file.read()
-    if suffix in {".xls",".xlsx"}:
-        # Spreadsheet parsing is relatively heavy; import pandas only when this
-        # generic upload path actually receives an Excel file.
-        import pandas as pd
-        engine="xlrd" if suffix==".xls" else "openpyxl"
-        df=pd.read_excel(io.BytesIO(raw), engine=engine, header=None)
-        rows=[["" if pd.isna(v) else v for v in row] for row in df.values.tolist()]
-        # If the first row looks like headers, preserve it as strings and use the table parser.
-        result=_parse_table(rows, role, value_kind, interval_minutes)
-        result.detected_format="excel_"+result.detected_format
+    if suffix in {".xls", ".xlsx"}:
+        try:
+            if suffix == ".xls":
+                import xlrd
+
+                book = xlrd.open_workbook(file_contents=raw, on_demand=True)
+                try:
+                    sheet = book.sheet_by_index(0)
+                    rows = [
+                        [sheet.cell_value(r, c) for c in range(sheet.ncols)]
+                        for r in range(sheet.nrows)
+                    ]
+                finally:
+                    book.release_resources()
+            else:
+                from openpyxl import load_workbook
+
+                workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+                try:
+                    sheet = workbook.active
+                    rows = [
+                        ["" if value is None else value for value in row]
+                        for row in sheet.iter_rows(values_only=True)
+                    ]
+                finally:
+                    workbook.close()
+        except Exception as exc:
+            raise ProfileParseError(f"Could not read spreadsheet: {exc}") from exc
+
+        result = _parse_table(rows, role, value_kind, interval_minutes)
+        result.detected_format = "excel_" + result.detected_format
         return result
     if suffix not in {".csv",".txt"}:
         raise ProfileParseError("Supported upload types are CSV, TXT, XLS, and XLSX.")

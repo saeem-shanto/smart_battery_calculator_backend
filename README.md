@@ -1,116 +1,247 @@
-# Smart Battery Calculator Backend — GNU Octave Edition
+# Smart Battery Calculator API
 
-Django/DRF backend for Project N01. This edition executes the client's MATLAB-compatible battery optimisation with **GNU Octave**, so the deployed Render service does not need MATLAB, MATLAB Runtime, MATLAB Engine, or a MATLAB licence.
+Production Django/DRF backend for Project N01.
 
-## Runtime architecture
+## Immutable client MATLAB source
 
-```text
-Next.js / Vercel
-       ↓ REST
-Django / Render
-       ↓
-OctaveEngine
-       ↓ subprocess (one calculation at a time)
-octave-cli
-       ↓
-octave_source/smart_battery_optimize.m
-       ↓
-JSON result
-```
+The client MATLAB files remain under `matlab_source/` with their original names and source content:
 
-The normal calculation endpoints keep the existing database/API contract. The default engine is:
+- `battrail.m`
+- `natpaymenttrail.m`
+- `rpresults.m`
 
-```env
-CALCULATION_ENGINE=octave
-```
-
-No silent algorithm fallback is used.
-
-## Octave diagnostics
-
-When `OCTAVE_TEST_ENABLED=True`:
+GNU Octave executes the legacy workflow without renaming or editing those files. The historical runtime input/output names remain:
 
 ```text
-GET  /api/v1/octave/status/
-POST /api/v1/octave/test/
-POST /api/v1/octave/test-file/
+Vanikavipuldata.xls
+Results_RPAtrail400.csv
 ```
 
-Swagger:
+Django creates a temporary compatibility copy named `Vanikavipuldata.xls` only during execution. The user's uploaded file is stored under its original filename while that stored input exists.
 
-```text
-http://127.0.0.1:8000/api/docs/
-```
+## Production stack
 
-## Client algorithm source
+- Django + Django REST Framework
+- PostgreSQL
+- GNU Octave (`octave-cli`)
+- original client MATLAB source executed unchanged
+- Gunicorn + WhiteNoise
+- JWT for staff/admin APIs
+- one-time guest `X-Calculation-Token`
+- Swagger UI: `/api/docs/`
+- OpenAPI schema: `/api/schema/`
+- liveness: `/api/v1/health/`
+- readiness: `/api/v1/ready/`
 
-`octave_source/` contains:
+## One unique input -> one canonical CSV
 
-- `smart_battery_optimize.m` — MATLAB-compatible optimisation wrapper
-- `run_smart_battery_cli.m` — small file-based bridge used by Django
+Input bytes are content-addressed with SHA-256.
 
-The original supplied optimisation structure is retained: SOC limits, efficiencies, flat retail/FIT inputs, `fminbnd` battery sizing, and the objective `battery annual payment + import cost - export revenue`.
+For each unique input payload the system stores at most:
 
-`matlab_sdk_source/` is retained as a legacy/reference build route but is not needed for the Octave deployment.
+1. one `StoredInputFile`
+2. one `StoredCsvResult` named `Results_RPAtrail400.csv`
 
-## Local start
+Re-uploading identical bytes reuses the canonical CSV instead of rerunning Octave while that CSV still exists.
 
-Install GNU Octave first.
+`StoredCsvResult.source_input_sha256` keeps the one-input/one-CSV identity even when an administrator deletes the stored input bytes.
 
-macOS:
+## Calculation records are independent from stored files
 
-```bash
-brew install octave
-```
+A `Calculation` is an audit/history record. It can remain in the database even when an administrator deletes the physical input or output bytes.
 
-Check:
+Each record can store searchable information such as:
 
-```bash
-octave-cli --version
-```
+- postcode
+- suburb
+- state
+- arbitrary JSON `metadata`
+- original uploaded filename and SHA-256
+- calculation assumptions
+- warnings
+- complete result payload
+- runtime and algorithm version
+- created/updated timestamps
 
-Then:
+The admin can therefore retain the calculation history while removing large or sensitive file blobs.
 
-```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-python manage.py migrate
-python manage.py check
-python manage.py runserver
-```
+### Independent deletion behaviour
 
-Check the bridge:
+- delete input file -> calculation record remains; CSV remains
+- delete CSV -> calculation record remains; input remains
+- delete calculation record -> stored files are not automatically deleted
+- delete a shared unique file -> every calculation that referenced that file remains, with the corresponding file link set to null
 
-```bash
-curl http://127.0.0.1:8000/api/v1/octave/status/
-```
+The maintenance command can later remove genuinely unreferenced files.
 
-## Render Free
-
-The Dockerfile installs GNU Octave with `apt-get` and deliberately runs one synchronous Gunicorn worker:
-
-```text
---workers 1 --worker-class sync --threads 1
-```
-
-`OctaveEngine` also serializes algorithm calls with a process lock. This reduces the chance of two Octave processes competing for the 512 MB Render Free memory limit.
-
-Free hosting is appropriate for the university prototype and validation deployment, but should not be treated as high-availability production infrastructure.
-
-## Client workbook calculation
+## Main calculation API
 
 ```text
 POST /api/v1/calculations/client-workbook/
 ```
 
-Expected workbook convention:
+Multipart form-data:
 
-- column 1 = legacy/base PV profile
-- column 2 = household load
-- each row = one hour
+```text
+file                            File   <client workbook>
+consent                         Text   true
+postcode                        Text   5000       (optional)
+suburb                          Text   Adelaide   (optional)
+state                           Text   SA         (optional)
+metadata                        Text   {"scenario_label":"Home A"}  (optional JSON)
+battery_installed_cost_per_kwh Text   1000
+```
 
-The raw workbook is validated by Django, converted to arrays, then passed to GNU Octave. The uploaded workbook itself is not stored in the `Calculation` payload.
+The unchanged MATLAB source fixes the optimisation values for PV size, retail rate, FiT, battery annual payment rate and search bound. `battery_installed_cost_per_kwh` is only used by Django for simple-payback reporting.
 
-See `OCTAVE_SETUP.md` and `CLIENT_WORKBOOK_GUIDE.md` for deployment and cURL examples.
+## User calculation access
+
+Retrieve:
+
+```text
+GET /api/v1/calculations/{public_id}/
+X-Calculation-Token: <token>
+```
+
+List available files:
+
+```text
+GET /api/v1/calculations/{public_id}/files/
+X-Calculation-Token: <token>
+```
+
+Download input or CSV:
+
+```text
+GET /api/v1/calculations/{public_id}/files/{file_id}/download/
+X-Calculation-Token: <token>
+```
+
+Delete the user's calculation record:
+
+```text
+DELETE /api/v1/calculations/{public_id}/
+X-Calculation-Token: <token>
+```
+
+## Admin record table API
+
+The Next.js admin dashboard can use:
+
+```text
+GET /api/v1/admin/calculations/
+Authorization: Bearer <admin-access-token>
+```
+
+The list is deliberately flat/table-ready and includes:
+
+- public ID
+- postcode, suburb, state
+- status
+- original filename and SHA-256
+- `has_input_file`
+- `has_csv_file`
+- optimal battery size
+- net annual payment
+- estimated bill reduction
+- algorithm version
+- runtime
+- timestamps
+
+Supported filters:
+
+```text
+?status=completed
+?postcode=5000
+?state=SA
+?has_input=true
+?has_csv=true
+?q=Adelaide
+```
+
+Admin detail / metadata update / record deletion:
+
+```text
+GET    /api/v1/admin/calculations/{public_id}/
+PATCH  /api/v1/admin/calculations/{public_id}/
+DELETE /api/v1/admin/calculations/{public_id}/
+```
+
+The admin can update only the record information fields (`postcode`, `suburb`, `state`, `metadata`); algorithm outputs remain read-only.
+
+## Admin file management
+
+Download:
+
+```text
+GET /api/v1/admin/calculations/{public_id}/files/{file_id}/download/
+```
+
+Delete input or CSV without deleting the calculation record:
+
+```text
+DELETE /api/v1/admin/calculations/{public_id}/files/{file_id}/
+```
+
+The delete response reports how many calculation records referenced the shared unique file.
+
+The same deletion capability is also available through Django Admin:
+
+```text
+/django-admin/
+```
+
+Django Admin contains separate list/table views for:
+
+- calculation records
+- unique stored input files
+- canonical CSV results
+
+and supports normal single/bulk delete actions.
+
+## Client workbook format
+
+Accepted file types: XLS, XLSX, CSV, TXT.
+
+- column 1: legacy/base PV profile
+- column 2: household load
+- each accepted row: one hour
+- extra columns: ignored with a warning
+- production: 8760 rows, or 8784 for leap years
+
+## Local setup
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+python manage.py migrate
+python manage.py check
+python manage.py octave_status
+python manage.py runserver 127.0.0.1:8000
+```
+
+## Validation commands
+
+```bash
+python manage.py test
+python manage.py octave_status
+python manage.py validate_octave_workbook /path/to/Vanikavipuldata.xls
+python manage.py spectacular --file openapi.yml --validate
+python manage.py purge_expired_data
+```
+
+## Validated parity reference
+
+The full-year client workbook previously reproduced the MATLAB reference closely:
+
+- optimal battery: ~7.388 kWh
+- net annual payment: ~$304.15
+- export: ~4543.76 kWh
+- import: ~1320.37 kWh
+- retail price: $0.3773/kWh
+- feed-in tariff: $0.124/kWh
+- PV size: 5 kW
+
+After migration, run the included Postman production checks before connecting the frontend.

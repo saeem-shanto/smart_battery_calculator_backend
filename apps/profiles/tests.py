@@ -14,7 +14,7 @@ class ProfileParserTests(SimpleTestCase):
         self.assertEqual(parsed.pv_values, [0.0, 0.0])
         self.assertEqual(parsed.load_values, [0.4, 0.5])
 
-    def test_headerless_matlab_convention(self):
+    def test_headerless_client_convention(self):
         content = b"0.1,0.5\n0.2,0.6\n"
         upload = SimpleUploadedFile("two_columns.csv", content, content_type="text/csv")
         parsed = parse_profile_file(upload, "combined", "energy_kwh_interval", 60)

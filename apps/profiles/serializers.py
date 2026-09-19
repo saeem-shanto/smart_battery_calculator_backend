@@ -1,15 +1,33 @@
 from rest_framework import serializers
 
+
 class ProfileUploadSerializer(serializers.Serializer):
-    file = serializers.FileField()
-    data_role = serializers.ChoiceField(choices=["load","pv","combined"])
-    value_kind = serializers.ChoiceField(choices=["auto","energy_kwh_interval","power_kw"], default="auto")
-    interval_minutes = serializers.IntegerField(required=False, min_value=1, max_value=1440)
+    file = serializers.FileField(
+        help_text="CSV/TXT/XLS/XLSX profile file. NEM12 is supported for load-role CSV/TXT uploads."
+    )
+    data_role = serializers.ChoiceField(
+        choices=["load", "pv", "combined"],
+        help_text="Whether the file contains household load, PV generation, or both.",
+    )
+    value_kind = serializers.ChoiceField(
+        choices=["auto", "energy_kwh_interval", "power_kw"],
+        default="auto",
+    )
+    interval_minutes = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        max_value=1440,
+        help_text="Optional interval length when it cannot be inferred from timestamps/file structure.",
+    )
     consent = serializers.BooleanField()
+
     def validate_consent(self, value):
         if value is not True:
-            raise serializers.ValidationError("Consent to temporary processing is required for uploaded household data.")
+            raise serializers.ValidationError(
+                "Consent to temporary processing is required for uploaded household data."
+            )
         return value
+
 
 class ProfileUploadResponseSerializer(serializers.Serializer):
     upload_token = serializers.UUIDField()

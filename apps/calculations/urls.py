@@ -1,8 +1,19 @@
 from django.urls import path
-from .views import CalculationCreateView, CalculationDetailView, ClientWorkbookCalculationView
+
+from .views import (
+    CalculationDetailView,
+    CalculationFileDownloadView,
+    CalculationFileListView,
+    ClientWorkbookCalculationView,
+)
 
 urlpatterns = [
-    path("", CalculationCreateView.as_view(), name="calculation-create"),
     path("client-workbook/", ClientWorkbookCalculationView.as_view(), name="calculation-client-workbook"),
     path("<uuid:public_id>/", CalculationDetailView.as_view(), name="calculation-detail"),
+    path("<uuid:public_id>/files/", CalculationFileListView.as_view(), name="calculation-files"),
+    path(
+        "<uuid:public_id>/files/<uuid:file_id>/download/",
+        CalculationFileDownloadView.as_view(),
+        name="calculation-file-download",
+    ),
 ]

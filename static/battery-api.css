@@ -1,2 +1,0 @@
-/* Project-owned static file used as a deployment/staticfiles health check. */
-:root { --battery-api-static-ready: 1; }

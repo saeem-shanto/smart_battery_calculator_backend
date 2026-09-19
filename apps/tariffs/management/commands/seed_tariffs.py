@@ -7,7 +7,7 @@ class Command(BaseCommand):
         TariffPlan.objects.update_or_create(
             name="Reference Flat Tariff", provider="Project reference",
             defaults={"kind":"flat", "flat_import_rate":0.3773, "feed_in_rate":0.124, "daily_supply_charge":0, "is_active":True,
-                      "notes":"Matches the retail and feed-in rates in the supplied MATLAB reference algorithm."}
+                      "notes":"Matches the retail and feed-in rates in the validated client reference algorithm."}
         )
         TariffPlan.objects.update_or_create(
             name="Example Time-of-Use Tariff", provider="Demonstration only",

@@ -1,20 +1,18 @@
 from rest_framework import serializers
 
+from apps.calculations.serializers import BatteryCalculationResultSerializer
+
 
 class OctaveTestSerializer(serializers.Serializer):
     pv_profile = serializers.ListField(
-        child=serializers.FloatField(min_value=0), min_length=2, max_length=100_000
+        child=serializers.FloatField(min_value=0), min_length=2, max_length=100_000,
+        help_text="Legacy/base PV profile values, one value per hour.",
     )
     load_profile = serializers.ListField(
-        child=serializers.FloatField(min_value=0), min_length=2, max_length=100_000
+        child=serializers.FloatField(min_value=0), min_length=2, max_length=100_000,
+        help_text="Household load values in kWh, one value per hour.",
     )
-    profile_is_base_pv = serializers.BooleanField(default=True)
-    pv_size_kw = serializers.FloatField(min_value=0, max_value=50, default=5)
-    battery_annual_cost_per_kwh = serializers.FloatField(min_value=0, max_value=1000, default=50)
     battery_installed_cost_per_kwh = serializers.FloatField(min_value=0, max_value=10000, default=1000)
-    retail_price_per_kwh = serializers.FloatField(min_value=0, max_value=5, default=0.3773)
-    feed_in_tariff_per_kwh = serializers.FloatField(min_value=0, max_value=5, default=0.124)
-    max_battery_capacity_kwh = serializers.FloatField(min_value=0.1, max_value=200, default=50)
 
     def validate(self, attrs):
         if len(attrs["pv_profile"]) != len(attrs["load_profile"]):
@@ -23,10 +21,39 @@ class OctaveTestSerializer(serializers.Serializer):
 
 
 class OctaveFileSerializer(serializers.Serializer):
-    file = serializers.FileField()
-    pv_size_kw = serializers.FloatField(min_value=0, max_value=50, default=5)
-    battery_annual_cost_per_kwh = serializers.FloatField(min_value=0, max_value=1000, default=50)
+    file = serializers.FileField(help_text="Client workbook; first two columns are legacy PV base profile and load.")
     battery_installed_cost_per_kwh = serializers.FloatField(min_value=0, max_value=10000, default=1000)
-    retail_price_per_kwh = serializers.FloatField(min_value=0, max_value=5, default=0.3773)
-    feed_in_tariff_per_kwh = serializers.FloatField(min_value=0, max_value=5, default=0.124)
-    max_battery_capacity_kwh = serializers.FloatField(min_value=0.1, max_value=200, default=50)
+
+
+class OctaveStatusSerializer(serializers.Serializer):
+    engine = serializers.CharField()
+    runtime_ready = serializers.BooleanField()
+    octave_executable = serializers.CharField()
+    octave_path = serializers.CharField(allow_null=True)
+    octave_version = serializers.CharField(allow_null=True)
+    algorithm_source_present = serializers.BooleanField()
+    bridge_present = serializers.BooleanField()
+    algorithm_files = serializers.DictField(child=serializers.CharField())
+    algorithm_sha256 = serializers.CharField(allow_null=True)
+    legacy_input_filename = serializers.CharField()
+    legacy_output_filename = serializers.CharField()
+    serialize_calls = serializers.BooleanField()
+    timeout_seconds = serializers.IntegerField()
+    error = serializers.CharField(allow_null=True)
+    enabled = serializers.BooleanField()
+    calculation_engine = serializers.CharField()
+
+
+class OctaveTestResponseSerializer(serializers.Serializer):
+    ok = serializers.BooleanField()
+    runtime_ms = serializers.IntegerField()
+    result = BatteryCalculationResultSerializer()
+
+
+class OctaveFileTestResponseSerializer(serializers.Serializer):
+    ok = serializers.BooleanField()
+    runtime_ms = serializers.IntegerField()
+    detected_format = serializers.CharField()
+    input_rows = serializers.IntegerField()
+    warnings = serializers.ListField(child=serializers.CharField())
+    result = BatteryCalculationResultSerializer()

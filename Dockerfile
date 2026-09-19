@@ -1,27 +1,30 @@
-FROM python:3.12-slim
+FROM python:3.12-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    DJANGO_SETTINGS_MODULE=config.settings.production
+    DJANGO_SETTINGS_MODULE=config.settings.production \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    MALLOC_ARENA_MAX=2
 
 WORKDIR /app
 
-# GNU Octave replaces MATLAB Runtime for the deployed client algorithm.
-# --no-install-recommends keeps the image smaller and avoids GUI extras where possible.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends octave libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends octave \
+    && rm -rf /var/lib/apt/lists/* \
+    && addgroup --system app \
+    && adduser --system --ingroup app app
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY --chown=app:app . .
 RUN chmod +x scripts/entrypoint.sh
 
+USER app
 EXPOSE 8000
 ENTRYPOINT ["./scripts/entrypoint.sh"]
 
-# Render Free: one synchronous worker means only one request executes at a time.
-# The OctaveEngine also uses an in-process lock as a second safety layer.
-CMD ["sh", "-c", "gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 1 --worker-class sync --threads 1 --timeout 180 --max-requests 25 --max-requests-jitter 5 --access-logfile -"]
+CMD ["sh", "-c", "gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 1 --worker-class gthread --threads 2 --timeout 180 --graceful-timeout 30 --max-requests 50 --max-requests-jitter 10 --access-logfile - --error-logfile -"]
