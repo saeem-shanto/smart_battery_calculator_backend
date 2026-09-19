@@ -39,3 +39,18 @@ class ProfileUploadResponseSerializer(serializers.Serializer):
     interval_count = serializers.IntegerField()
     warnings = serializers.ListField(child=serializers.CharField())
     expires_at = serializers.DateTimeField()
+
+
+class ClientWorkbookValidationSerializer(serializers.Serializer):
+    file = serializers.FileField(
+        help_text="Client XLS/XLSX/CSV/TXT workbook to validate. This endpoint never stores the file or parsed values."
+    )
+
+
+class ClientWorkbookValidationResponseSerializer(serializers.Serializer):
+    valid = serializers.BooleanField()
+    original_name = serializers.CharField()
+    detected_format = serializers.CharField()
+    row_count = serializers.IntegerField()
+    profile_is_full_year = serializers.BooleanField()
+    warnings = serializers.ListField(child=serializers.CharField())

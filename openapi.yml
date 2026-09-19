@@ -1,0 +1,3057 @@
+openapi: 3.0.3
+info:
+  title: Smart Solar Battery Calculator API
+  version: 1.5.1
+  description: Production API for Project N01. The original client MATLAB files are
+    executed unchanged under GNU Octave. Retained input files and canonical CSV result
+    artifacts are persisted in Supabase Storage; record metadata is persisted in PostgreSQL.
+paths:
+  /:
+    get:
+      operationId: api_root
+      description: Human-readable discovery endpoint for the Smart Battery Calculator
+        API.
+      summary: API index
+      tags:
+      - System
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiRootResponse'
+          description: ''
+  /api/v1/accounts/auth/logout/:
+    post:
+      operationId: accounts_auth_logout_create
+      tags:
+      - User Accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '204':
+          description: No response body
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/accounts/auth/token/:
+    post:
+      operationId: accounts_auth_token_create
+      description: |-
+        Takes a set of user credentials and returns an access and refresh JSON web
+        token pair to prove the authentication of those credentials.
+      tags:
+      - User Accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserTokenObtainPairRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserTokenObtainPairRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserTokenObtainPairRequest'
+        required: true
+      responses:
+        '200':
+          description: No response body
+  /api/v1/accounts/auth/token/refresh/:
+    post:
+      operationId: accounts_auth_token_refresh_create
+      description: |-
+        Takes a refresh type JSON web token and returns an access type JSON web
+        token if the refresh token is valid.
+      tags:
+      - User Accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefresh'
+          description: ''
+  /api/v1/accounts/me/:
+    get:
+      operationId: account_profile_retrieve
+      tags:
+      - User Accounts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummary'
+          description: ''
+    patch:
+      operationId: account_profile_update
+      tags:
+      - User Accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUserProfileUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedUserProfileUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedUserProfileUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummary'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/accounts/me/avatar/:
+    get:
+      operationId: accounts_me_avatar_retrieve
+      summary: Download the authenticated user's profile picture
+      tags:
+      - User Accounts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
+          description: Profile image.
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/accounts/me/calculations/:
+    get:
+      operationId: accounts_me_calculations_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - User Accounts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedOwnedCalculationListList'
+          description: ''
+  /api/v1/accounts/me/password/:
+    post:
+      operationId: accounts_me_password_create
+      tags:
+      - User Accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChangeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PasswordChangeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PasswordChangeRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/accounts/register/:
+    post:
+      operationId: accounts_register_create
+      tags:
+      - User Accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/admin/auth/token/:
+    post:
+      operationId: admin_auth_token_create
+      description: |-
+        Takes a set of user credentials and returns an access and refresh JSON web
+        token pair to prove the authentication of those credentials.
+      tags:
+      - Admin Authentication
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminTokenObtainPairRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AdminTokenObtainPairRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AdminTokenObtainPairRequest'
+        required: true
+      responses:
+        '200':
+          description: No response body
+  /api/v1/admin/auth/token/refresh/:
+    post:
+      operationId: admin_auth_token_refresh_create
+      description: |-
+        Takes a refresh type JSON web token and returns an access type JSON web
+        token if the refresh token is valid.
+      tags:
+      - Admin Authentication
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefresh'
+          description: ''
+  /api/v1/admin/calculations/:
+    get:
+      operationId: admin_calculations_list
+      summary: List calculation records for the admin table
+      parameters:
+      - in: query
+        name: has_csv
+        schema:
+          type: boolean
+        description: Filter records with/without stored CSV bytes.
+      - in: query
+        name: has_input
+        schema:
+          type: boolean
+        description: Filter records with/without stored input bytes.
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: postcode
+        schema:
+          type: string
+        description: Exact postcode filter.
+      - in: query
+        name: q
+        schema:
+          type: string
+        description: Search postcode, suburb, state, filename, input SHA-256, or exact
+          public UUID.
+      - in: query
+        name: state
+        schema:
+          type: string
+        description: Case-insensitive state filter.
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: Filter by processing/completed/failed.
+      tags:
+      - Admin Dashboard
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAdminCalculationListList'
+          description: ''
+  /api/v1/admin/calculations/{public_id}/:
+    get:
+      operationId: admin_calculations_retrieve
+      summary: View, update record metadata, or delete a calculation record
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Admin Dashboard
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCalculation'
+          description: ''
+        '204':
+          description: Record deleted.
+    put:
+      operationId: admin_calculations_update
+      summary: View, update record metadata, or delete a calculation record
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Admin Dashboard
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminCalculationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AdminCalculationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AdminCalculationRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCalculation'
+          description: ''
+        '204':
+          description: Record deleted.
+    patch:
+      operationId: admin_calculations_partial_update
+      summary: View, update record metadata, or delete a calculation record
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Admin Dashboard
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedAdminCalculationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedAdminCalculationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedAdminCalculationRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCalculation'
+          description: ''
+        '204':
+          description: Record deleted.
+    delete:
+      operationId: admin_calculations_destroy
+      summary: View, update record metadata, or delete a calculation record
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Admin Dashboard
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCalculation'
+          description: ''
+        '204':
+          description: Record deleted.
+  /api/v1/admin/calculations/{public_id}/files/{file_id}/:
+    delete:
+      operationId: admin_calculations_files_destroy
+      description: Deletes the selected stored file globally. Calculation records
+        that referenced the file are retained and their file foreign key becomes null.
+        Because unique input/CSV artifacts may be shared by several records, the response
+        reports how many records were affected.
+      summary: Delete a stored input or CSV file without deleting calculation records
+      parameters:
+      - in: path
+        name: file_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Admin Dashboard
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: File deleted; calculation records retained.
+        '404':
+          description: File not found for this calculation.
+  /api/v1/admin/calculations/{public_id}/files/{file_id}/download/:
+    get:
+      operationId: admin_calculations_files_download_retrieve
+      summary: Download a stored input or canonical CSV as an administrator
+      parameters:
+      - in: path
+        name: file_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Admin Dashboard
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
+          description: Binary file download.
+  /api/v1/admin/feedback/:
+    get:
+      operationId: admin_feedback_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - Admin Feedback
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAdminFeedbackList'
+          description: ''
+  /api/v1/admin/summary/:
+    get:
+      operationId: admin_summary_retrieve
+      tags:
+      - Admin Dashboard
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSummary'
+          description: ''
+  /api/v1/admin/tariffs/:
+    get:
+      operationId: admin_tariffs_list
+      tags:
+      - Admin Tariffs
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AdminTariff'
+          description: ''
+    post:
+      operationId: admin_tariffs_create
+      tags:
+      - Admin Tariffs
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminTariffRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AdminTariffRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AdminTariffRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTariff'
+          description: ''
+  /api/v1/admin/tariffs/{id}/:
+    get:
+      operationId: admin_tariffs_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Admin Tariffs
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTariff'
+          description: ''
+    put:
+      operationId: admin_tariffs_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Admin Tariffs
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminTariffRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AdminTariffRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AdminTariffRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTariff'
+          description: ''
+    patch:
+      operationId: admin_tariffs_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Admin Tariffs
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedAdminTariffRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedAdminTariffRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedAdminTariffRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTariff'
+          description: ''
+    delete:
+      operationId: admin_tariffs_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Admin Tariffs
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/calculations/{public_id}/:
+    get:
+      operationId: calculation_retrieve
+      summary: Retrieve a calculation and its currently available file list
+      parameters:
+      - in: header
+        name: X-Calculation-Token
+        schema:
+          type: string
+        description: Required for ownerless retained guest calculations. Authenticated
+          owners and staff may use their Bearer JWT instead.
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Calculations
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculationDetailResponse'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+    delete:
+      operationId: calculation_delete
+      description: Deletes this calculation record. Content-addressed input/CSV artifacts
+        remain while another calculation references them and are removed automatically
+        after commit when the final reference is deleted.
+      summary: Delete a calculation record
+      parameters:
+      - in: header
+        name: X-Calculation-Token
+        schema:
+          type: string
+        description: Required for ownerless retained guest calculations. Authenticated
+          owners and staff may use their Bearer JWT instead.
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Calculations
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '204':
+          description: Calculation deleted.
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/calculations/{public_id}/claim/:
+    post:
+      operationId: calculation_claim
+      description: Requires an authenticated user and the calculation's original X-Calculation-Token.
+        A calculation can only be claimed once unless it is already owned by the same
+        user.
+      summary: Claim a retained guest calculation into the authenticated account
+      parameters:
+      - in: header
+        name: X-Calculation-Token
+        schema:
+          type: string
+        description: Original private token required together with an authenticated
+          Bearer JWT to claim a guest calculation.
+        required: true
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Calculations
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculationDetailResponse'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/calculations/{public_id}/files/:
+    get:
+      operationId: calculation_files_list
+      description: 'A completed calculation can expose up to two files: the unique
+        input and its canonical Results_RPAtrail400.csv. Either may be absent if an
+        administrator deleted the stored bytes.'
+      summary: List the stored input and canonical CSV
+      parameters:
+      - in: header
+        name: X-Calculation-Token
+        schema:
+          type: string
+        description: Required for ownerless retained guest calculations. Authenticated
+          owners and staff may use their Bearer JWT instead.
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Calculations
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CalculationFile'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/calculations/{public_id}/files/{file_id}/download/:
+    get:
+      operationId: calculation_file_download
+      summary: Download the unique input file or its canonical CSV
+      parameters:
+      - in: header
+        name: X-Calculation-Token
+        schema:
+          type: string
+        description: Required for ownerless retained guest calculations. Authenticated
+          owners and staff may use their Bearer JWT instead.
+      - in: path
+        name: file_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Calculations
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
+          description: Binary file download.
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/calculations/client-workbook/:
+    post:
+      operationId: calculation_client_workbook
+      description: 'Executes the client''s unchanged battrail.m and natpaymenttrail.m
+        under GNU Octave. When retain_data=true, input files are deduplicated by SHA-256
+        and each unique input has at most one canonical Results_RPAtrail400.csv. When
+        retain_data=false, processing is transient: no calculation/input/CSV database
+        rows are created and the CSV is returned inline for immediate download. The
+        source fixes PV size=5 kW, battery annual rate=50 AUD/kWh/year, retail=0.3773
+        AUD/kWh, FiT=0.124 AUD/kWh and battery search range=0-50 kWh.'
+      summary: Run the original client MATLAB workbook calculation
+      tags:
+      - Calculations
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ClientWorkbookCalculationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ClientWorkbookCalculationRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculationCreateResponse'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculationCreateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/feedback/:
+    post:
+      operationId: feedback_create
+      description: Submit a 1–5 rating and optional comment. A calculation can be
+        linked only when its private calculation token is also provided.
+      summary: Submit project feedback
+      tags:
+      - Feedback
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FeedbackCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FeedbackCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/health/:
+    get:
+      operationId: health_liveness
+      description: Cheap liveness check used by the hosting platform; it does not
+        launch GNU Octave.
+      summary: Liveness check
+      tags:
+      - System
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+          description: ''
+  /api/v1/octave/status/:
+    get:
+      operationId: octave_status
+      summary: Check GNU Octave and immutable MATLAB source status
+      tags:
+      - GNU Octave diagnostics
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OctaveStatus'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OctaveStatus'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/octave/test/:
+    post:
+      operationId: octave_direct_test
+      description: The arrays are treated as the same legacy base-PV/load columns
+        expected by Vanikavipuldata.xls.
+      summary: Run unchanged MATLAB source from diagnostic arrays
+      tags:
+      - GNU Octave diagnostics
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OctaveTestRequest'
+            examples:
+              24-hourLegacy-styleTest:
+                value:
+                  pv_profile:
+                  - 0
+                  - 0
+                  - 0
+                  - 0
+                  - 0
+                  - 0.05
+                  - 0.15
+                  - 0.35
+                  - 0.55
+                  - 0.75
+                  - 0.9
+                  - 1
+                  - 0.95
+                  - 0.85
+                  - 0.7
+                  - 0.5
+                  - 0.3
+                  - 0.12
+                  - 0.03
+                  - 0
+                  - 0
+                  - 0
+                  - 0
+                  - 0
+                  load_profile:
+                  - 0.35
+                  - 0.3
+                  - 0.28
+                  - 0.26
+                  - 0.3
+                  - 0.4
+                  - 0.55
+                  - 0.6
+                  - 0.5
+                  - 0.4
+                  - 0.35
+                  - 0.3
+                  - 0.32
+                  - 0.35
+                  - 0.4
+                  - 0.5
+                  - 0.75
+                  - 1.1
+                  - 1.3
+                  - 1
+                  - 0.8
+                  - 0.65
+                  - 0.5
+                  - 0.4
+                  battery_installed_cost_per_kwh: 1000
+                summary: 24-hour legacy-style test
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OctaveTestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OctaveTestRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OctaveTestResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/octave/test-file/:
+    post:
+      operationId: octave_workbook_test
+      summary: Run unchanged MATLAB source from a client workbook without saving it
+      tags:
+      - GNU Octave diagnostics
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OctaveFileRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OctaveFileRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OctaveFileTestResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/profiles/client-workbook/validate/:
+    post:
+      operationId: client_workbook_validate_transient
+      description: 'Parses the exact workbook convention used by the immutable MATLAB/Octave
+        workflow and validates the production full-year requirement. This endpoint
+        is privacy-safe: it does not create database rows and does not retain uploaded
+        bytes or parsed household values after the request completes.'
+      summary: Validate a client workbook without retaining it
+      tags:
+      - Profile Uploads
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ClientWorkbookValidationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ClientWorkbookValidationRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientWorkbookValidationResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/profiles/uploads/validate/:
+    post:
+      operationId: profile_upload_validate
+      description: Validates a load/PV profile and stores only its parsed normalized
+        payload for a limited time. This legacy staging endpoint is separate from
+        the privacy-safe client workbook validation endpoint.
+      summary: Validate and stage an interval profile
+      tags:
+      - Profile Uploads
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProfileUploadRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProfileUploadRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileUploadResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/ready/:
+    get:
+      operationId: health_readiness
+      description: Checks PostgreSQL, retained-file storage and GNU Octave runtime/source
+        availability.
+      summary: Readiness check
+      tags:
+      - System
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+          description: A required component is not ready.
+  /api/v1/tariffs/:
+    get:
+      operationId: tariff_list
+      description: Returns tariff definitions available to the calculator. The client
+        legacy Octave algorithm currently accepts flat retail/FIT rates only; incompatible
+        tariff structures are rejected during calculation.
+      summary: List active electricity tariffs
+      tags:
+      - Tariffs
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TariffPlan'
+          description: ''
+components:
+  schemas:
+    AdminCalculation:
+      type: object
+      properties:
+        public_id:
+          type: string
+          format: uuid
+          readOnly: true
+        owner_username:
+          type: string
+          readOnly: true
+          nullable: true
+        owner_email:
+          type: string
+          format: email
+          readOnly: true
+          nullable: true
+        postcode:
+          type: string
+          maxLength: 12
+        suburb:
+          type: string
+          maxLength: 120
+        state:
+          type: string
+          maxLength: 40
+        metadata: {}
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusEnum'
+          readOnly: true
+        source_mode:
+          allOf:
+          - $ref: '#/components/schemas/SourceModeEnum'
+          readOnly: true
+        input_filename:
+          type: string
+          nullable: true
+          readOnly: true
+        input_sha256:
+          type: string
+          nullable: true
+          readOnly: true
+        input_payload:
+          readOnly: true
+        result_payload:
+          readOnly: true
+        assumptions:
+          readOnly: true
+        warnings:
+          readOnly: true
+        algorithm_version:
+          type: string
+          readOnly: true
+        runtime_ms:
+          type: integer
+          readOnly: true
+        error_code:
+          type: string
+          readOnly: true
+        error_message:
+          type: string
+          readOnly: true
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/CalculationFile'
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - algorithm_version
+      - assumptions
+      - created_at
+      - error_code
+      - error_message
+      - files
+      - input_filename
+      - input_payload
+      - input_sha256
+      - owner_email
+      - owner_username
+      - public_id
+      - result_payload
+      - runtime_ms
+      - source_mode
+      - status
+      - updated_at
+      - warnings
+    AdminCalculationList:
+      type: object
+      properties:
+        public_id:
+          type: string
+          format: uuid
+          readOnly: true
+        owner_username:
+          type: string
+          readOnly: true
+          nullable: true
+        postcode:
+          type: string
+          maxLength: 12
+        suburb:
+          type: string
+          maxLength: 120
+        state:
+          type: string
+          maxLength: 40
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+        input_filename:
+          type: string
+          nullable: true
+          readOnly: true
+        input_sha256:
+          type: string
+          nullable: true
+          readOnly: true
+        has_input_file:
+          type: boolean
+          readOnly: true
+        has_csv_file:
+          type: boolean
+          readOnly: true
+        optimal_battery_size_kwh:
+          type: number
+          format: double
+          nullable: true
+          readOnly: true
+        net_annual_payment_aud:
+          type: number
+          format: double
+          nullable: true
+          readOnly: true
+        estimated_annual_bill_reduction_aud:
+          type: number
+          format: double
+          nullable: true
+          readOnly: true
+        algorithm_version:
+          type: string
+          maxLength: 80
+        runtime_ms:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - estimated_annual_bill_reduction_aud
+      - has_csv_file
+      - has_input_file
+      - input_filename
+      - input_sha256
+      - net_annual_payment_aud
+      - optimal_battery_size_kwh
+      - owner_username
+      - public_id
+      - updated_at
+    AdminCalculationRequest:
+      type: object
+      properties:
+        postcode:
+          type: string
+          maxLength: 12
+        suburb:
+          type: string
+          maxLength: 120
+        state:
+          type: string
+          maxLength: 40
+        metadata: {}
+    AdminFeedback:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        calculation_public_id:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        rating:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        comment:
+          type: string
+          maxLength: 2000
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - calculation_public_id
+      - created_at
+      - id
+      - rating
+    AdminSummary:
+      type: object
+      properties:
+        calculations:
+          $ref: '#/components/schemas/CountSummary'
+        source_modes:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceModeSummary'
+        average_runtime_ms:
+          type: number
+          format: double
+        feedback:
+          $ref: '#/components/schemas/FeedbackSummary'
+        recent:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminCalculationList'
+      required:
+      - average_runtime_ms
+      - calculations
+      - feedback
+      - recent
+      - source_modes
+    AdminTariff:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 120
+        provider:
+          type: string
+          maxLength: 120
+        kind:
+          $ref: '#/components/schemas/KindEnum'
+        flat_import_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+          nullable: true
+        peak_import_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+          nullable: true
+        shoulder_import_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+          nullable: true
+        offpeak_import_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+          nullable: true
+        feed_in_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+        daily_supply_charge:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,4})?$
+        demand_charge_rate_per_kw_day:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,4})?$
+        peak_start_hour:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        peak_end_hour:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        shoulder_start_hour:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        shoulder_end_hour:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        is_active:
+          type: boolean
+        notes:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - name
+      - updated_at
+    AdminTariffRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        provider:
+          type: string
+          maxLength: 120
+        kind:
+          $ref: '#/components/schemas/KindEnum'
+        flat_import_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+          nullable: true
+        peak_import_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+          nullable: true
+        shoulder_import_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+          nullable: true
+        offpeak_import_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+          nullable: true
+        feed_in_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+        daily_supply_charge:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,4})?$
+        demand_charge_rate_per_kw_day:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,4})?$
+        peak_start_hour:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        peak_end_hour:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        shoulder_start_hour:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        shoulder_end_hour:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        is_active:
+          type: boolean
+        notes:
+          type: string
+      required:
+      - name
+    AdminTokenObtainPairRequest:
+      type: object
+      description: |-
+        Issue JWTs only after staff status is verified.
+
+        SimpleJWT's default serializer creates the refresh token before custom
+        post-validation checks. Authenticating explicitly avoids recording an
+        outstanding refresh token for a valid non-staff user who is denied admin
+        access.
+      properties:
+        username:
+          type: string
+          writeOnly: true
+          minLength: 1
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - password
+      - username
+    ApiError:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/ApiErrorBody'
+      required:
+      - error
+    ApiErrorBody:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        fields:
+          nullable: true
+        request_id:
+          type: string
+          nullable: true
+      required:
+      - code
+      - message
+    ApiRootResponse:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+        api_version:
+          type: string
+        calculation_engine:
+          type: string
+        health:
+          type: string
+        readiness:
+          type: string
+        swagger:
+          type: string
+        redoc:
+          type: string
+        schema:
+          type: string
+        octave_diagnostics:
+          type: string
+      required:
+      - api_version
+      - calculation_engine
+      - health
+      - name
+      - readiness
+      - redoc
+      - schema
+      - status
+      - swagger
+    AuthResponse:
+      type: object
+      properties:
+        access:
+          type: string
+        refresh:
+          type: string
+        user:
+          $ref: '#/components/schemas/UserSummary'
+      required:
+      - access
+      - refresh
+      - user
+    BatteryCalculationResult:
+      type: object
+      properties:
+        optimal_battery_size_kwh:
+          type: number
+          format: double
+        net_annual_payment_aud:
+          type: number
+          format: double
+        baseline_annual_payment_aud:
+          type: number
+          format: double
+        estimated_annual_bill_reduction_aud:
+          type: number
+          format: double
+        estimated_annual_bill_reduction_percent:
+          type: number
+          format: double
+        export_to_grid_kwh_year:
+          type: number
+          format: double
+        import_from_grid_kwh_year:
+          type: number
+          format: double
+        energy_balance_import_minus_export_kwh_year:
+          type: number
+          format: double
+        annual_load_kwh:
+          type: number
+          format: double
+        annual_pv_generation_kwh:
+          type: number
+          format: double
+        self_consumption_percent:
+          type: number
+          format: double
+        baseline_self_consumption_percent:
+          type: number
+          format: double
+        battery_annual_payment_rate_aud_per_kwh_year:
+          type: number
+          format: double
+        battery_upfront_cost_aud:
+          type: number
+          format: double
+        simple_payback_years:
+          type: number
+          format: double
+          nullable: true
+        average_retail_price_aud_per_kwh:
+          type: number
+          format: double
+        average_feed_in_tariff_aud_per_kwh:
+          type: number
+          format: double
+        annual_demand_charge_aud:
+          type: number
+          format: double
+        pv_size_kw:
+          type: number
+          format: double
+        optimizer_success:
+          type: boolean
+        optimizer_exitflag:
+          type: integer
+        objective_value:
+          type: number
+          format: double
+        engine:
+          type: string
+        algorithm_source:
+          type: string
+        algorithm_sha256:
+          type: string
+        profile_duration_hours:
+          type: integer
+        profile_is_full_year:
+          type: boolean
+      required:
+      - algorithm_sha256
+      - algorithm_source
+      - annual_demand_charge_aud
+      - annual_load_kwh
+      - annual_pv_generation_kwh
+      - average_feed_in_tariff_aud_per_kwh
+      - average_retail_price_aud_per_kwh
+      - baseline_annual_payment_aud
+      - baseline_self_consumption_percent
+      - battery_annual_payment_rate_aud_per_kwh_year
+      - battery_upfront_cost_aud
+      - energy_balance_import_minus_export_kwh_year
+      - engine
+      - estimated_annual_bill_reduction_aud
+      - estimated_annual_bill_reduction_percent
+      - export_to_grid_kwh_year
+      - import_from_grid_kwh_year
+      - net_annual_payment_aud
+      - objective_value
+      - optimal_battery_size_kwh
+      - optimizer_exitflag
+      - optimizer_success
+      - profile_duration_hours
+      - profile_is_full_year
+      - pv_size_kw
+      - self_consumption_percent
+      - simple_payback_years
+    CalculationCreateResponse:
+      type: object
+      properties:
+        public_id:
+          type: string
+          format: uuid
+          nullable: true
+        access_token:
+          type: string
+          nullable: true
+          description: Returned for retained guest calculations. Authenticated owners
+            use their Bearer JWT instead; transient calculations return null.
+        retained:
+          type: boolean
+        status:
+          type: string
+        postcode:
+          type: string
+        suburb:
+          type: string
+        state:
+          type: string
+        metadata: {}
+        input_filename:
+          type: string
+          nullable: true
+        result:
+          $ref: '#/components/schemas/BatteryCalculationResult'
+        assumptions:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+        algorithm_version:
+          type: string
+        runtime_ms:
+          type: integer
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/CalculationFile'
+        transient_csv:
+          allOf:
+          - $ref: '#/components/schemas/TransientCsv'
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - algorithm_version
+      - assumptions
+      - created_at
+      - files
+      - input_filename
+      - metadata
+      - postcode
+      - public_id
+      - result
+      - retained
+      - runtime_ms
+      - state
+      - status
+      - suburb
+      - warnings
+    CalculationDetailResponse:
+      type: object
+      properties:
+        public_id:
+          type: string
+          format: uuid
+        retained:
+          type: boolean
+          default: true
+        status:
+          type: string
+        postcode:
+          type: string
+        suburb:
+          type: string
+        state:
+          type: string
+        metadata: {}
+        input_filename:
+          type: string
+          nullable: true
+        result:
+          $ref: '#/components/schemas/BatteryCalculationResult'
+        assumptions:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+        algorithm_version:
+          type: string
+        runtime_ms:
+          type: integer
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/CalculationFile'
+        transient_csv:
+          allOf:
+          - $ref: '#/components/schemas/TransientCsv'
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - algorithm_version
+      - assumptions
+      - created_at
+      - files
+      - input_filename
+      - metadata
+      - postcode
+      - public_id
+      - result
+      - runtime_ms
+      - state
+      - status
+      - suburb
+      - warnings
+    CalculationFile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+        filename:
+          type: string
+        original_filename:
+          type: string
+        content_type:
+          type: string
+        size_bytes:
+          type: integer
+        sha256:
+          type: string
+        download_path:
+          type: string
+        delete_path:
+          type: string
+      required:
+      - content_type
+      - download_path
+      - filename
+      - id
+      - kind
+      - original_filename
+      - sha256
+      - size_bytes
+    ClientWorkbookCalculationRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+          description: Original client workbook. XLS/XLSX/CSV/TXT are accepted; column
+            1 is the legacy/base PV profile and column 2 is household load.
+        retain_data:
+          type: boolean
+          default: false
+          description: Privacy/retention choice. If true, the unique input, canonical
+            Results_RPAtrail400.csv and calculation record are persisted for later
+            download/admin audit. If false, the request is processed transiently,
+            no application database rows or file bytes are retained, and the CSV is
+            returned inline in the response.
+        consent:
+          type: boolean
+          description: Deprecated compatibility field. Older clients that omit retain_data
+            use this value as the retention choice. New clients should send retain_data
+            explicitly.
+        postcode:
+          description: Optional Australian 4-digit postcode. Persisted only when retain_data=true.
+          oneOf:
+          - type: string
+            default: ''
+            pattern: ^\d{4}$
+          - type: string
+            maxLength: 0
+        suburb:
+          type: string
+          default: ''
+          maxLength: 120
+        state:
+          type: string
+          default: ''
+          maxLength: 40
+        metadata:
+          description: Optional JSON object for non-algorithm record information.
+            Persisted only when retain_data=true. In multipart/form-data this may
+            be sent as a JSON string.
+        battery_installed_cost_per_kwh:
+          type: number
+          format: double
+          maximum: 10000
+          minimum: 0
+          default: 1000.0
+          description: Installed battery cost used only for Django's simple-payback
+            report (AUD/kWh). It does not alter the immutable MATLAB optimisation
+            source.
+      required:
+      - file
+    ClientWorkbookValidationRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+          description: Client XLS/XLSX/CSV/TXT workbook to validate. This endpoint
+            never stores the file or parsed values.
+      required:
+      - file
+    ClientWorkbookValidationResponse:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        original_name:
+          type: string
+        detected_format:
+          type: string
+        row_count:
+          type: integer
+        profile_is_full_year:
+          type: boolean
+        warnings:
+          type: array
+          items:
+            type: string
+      required:
+      - detected_format
+      - original_name
+      - profile_is_full_year
+      - row_count
+      - valid
+      - warnings
+    CountSummary:
+      type: object
+      properties:
+        today:
+          type: integer
+        last_7_days:
+          type: integer
+        last_30_days:
+          type: integer
+        all_time:
+          type: integer
+      required:
+      - all_time
+      - last_30_days
+      - last_7_days
+      - today
+    DataRoleEnum:
+      enum:
+      - load
+      - pv
+      - combined
+      type: string
+      description: |-
+        * `load` - load
+        * `pv` - pv
+        * `combined` - combined
+    FeedbackCreateRequest:
+      type: object
+      properties:
+        rating:
+          type: integer
+          maximum: 5
+          minimum: 1
+        comment:
+          type: string
+          maxLength: 2000
+        calculation_public_id:
+          type: string
+          format: uuid
+          nullable: true
+        calculation_access_token:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - rating
+    FeedbackResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        rating:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        comment:
+          type: string
+          maxLength: 2000
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - rating
+    FeedbackSummary:
+      type: object
+      properties:
+        last_30_days:
+          type: integer
+        average_rating:
+          type: number
+          format: double
+          nullable: true
+      required:
+      - average_rating
+      - last_30_days
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+        calculation_engine:
+          type: string
+        time:
+          type: string
+          format: date-time
+      required:
+      - calculation_engine
+      - service
+      - status
+      - time
+    KindEnum:
+      enum:
+      - flat
+      - tou
+      type: string
+      description: |-
+        * `flat` - Flat
+        * `tou` - Time of use
+    LogoutRequest:
+      type: object
+      properties:
+        refresh:
+          type: string
+          minLength: 1
+      required:
+      - refresh
+    OctaveFileRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+          description: Client workbook; first two columns are legacy PV base profile
+            and load.
+        battery_installed_cost_per_kwh:
+          type: number
+          format: double
+          maximum: 10000
+          minimum: 0
+          default: 1000.0
+      required:
+      - file
+    OctaveFileTestResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        runtime_ms:
+          type: integer
+        detected_format:
+          type: string
+        input_rows:
+          type: integer
+        warnings:
+          type: array
+          items:
+            type: string
+        result:
+          $ref: '#/components/schemas/BatteryCalculationResult'
+      required:
+      - detected_format
+      - input_rows
+      - ok
+      - result
+      - runtime_ms
+      - warnings
+    OctaveStatus:
+      type: object
+      properties:
+        engine:
+          type: string
+        runtime_ready:
+          type: boolean
+        octave_executable:
+          type: string
+        octave_path:
+          type: string
+          nullable: true
+        octave_version:
+          type: string
+          nullable: true
+        algorithm_source_present:
+          type: boolean
+        bridge_present:
+          type: boolean
+        algorithm_files:
+          type: object
+          additionalProperties:
+            type: string
+        algorithm_sha256:
+          type: string
+          nullable: true
+        legacy_input_filename:
+          type: string
+        legacy_output_filename:
+          type: string
+        serialize_calls:
+          type: boolean
+        timeout_seconds:
+          type: integer
+        error:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+        calculation_engine:
+          type: string
+      required:
+      - algorithm_files
+      - algorithm_sha256
+      - algorithm_source_present
+      - bridge_present
+      - calculation_engine
+      - enabled
+      - engine
+      - error
+      - legacy_input_filename
+      - legacy_output_filename
+      - octave_executable
+      - octave_path
+      - octave_version
+      - runtime_ready
+      - serialize_calls
+      - timeout_seconds
+    OctaveTestRequest:
+      type: object
+      properties:
+        pv_profile:
+          type: array
+          items:
+            type: number
+            format: double
+            minimum: 0
+          description: Legacy/base PV profile values, one value per hour.
+          maxItems: 100000
+          minItems: 2
+        load_profile:
+          type: array
+          items:
+            type: number
+            format: double
+            minimum: 0
+          description: Household load values in kWh, one value per hour.
+          maxItems: 100000
+          minItems: 2
+        battery_installed_cost_per_kwh:
+          type: number
+          format: double
+          maximum: 10000
+          minimum: 0
+          default: 1000.0
+      required:
+      - load_profile
+      - pv_profile
+    OctaveTestResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        runtime_ms:
+          type: integer
+        result:
+          $ref: '#/components/schemas/BatteryCalculationResult'
+      required:
+      - ok
+      - result
+      - runtime_ms
+    OwnedCalculationList:
+      type: object
+      properties:
+        public_id:
+          type: string
+          format: uuid
+          readOnly: true
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+        postcode:
+          type: string
+          maxLength: 12
+        suburb:
+          type: string
+          maxLength: 120
+        state:
+          type: string
+          maxLength: 40
+        metadata: {}
+        input_filename:
+          type: string
+          nullable: true
+          readOnly: true
+        result: {}
+        algorithm_version:
+          type: string
+          maxLength: 80
+        runtime_ms:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/CalculationFile'
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - files
+      - input_filename
+      - public_id
+      - result
+      - updated_at
+    PaginatedAdminCalculationListList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminCalculationList'
+    PaginatedAdminFeedbackList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminFeedback'
+    PaginatedOwnedCalculationListList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/OwnedCalculationList'
+    PasswordChangeRequest:
+      type: object
+      properties:
+        current_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+        new_password:
+          type: string
+          writeOnly: true
+          minLength: 8
+          maxLength: 128
+      required:
+      - current_password
+      - new_password
+    PatchedAdminCalculationRequest:
+      type: object
+      properties:
+        postcode:
+          type: string
+          maxLength: 12
+        suburb:
+          type: string
+          maxLength: 120
+        state:
+          type: string
+          maxLength: 40
+        metadata: {}
+    PatchedAdminTariffRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        provider:
+          type: string
+          maxLength: 120
+        kind:
+          $ref: '#/components/schemas/KindEnum'
+        flat_import_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+          nullable: true
+        peak_import_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+          nullable: true
+        shoulder_import_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+          nullable: true
+        offpeak_import_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+          nullable: true
+        feed_in_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+        daily_supply_charge:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,4})?$
+        demand_charge_rate_per_kw_day:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,4})?$
+        peak_start_hour:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        peak_end_hour:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        shoulder_start_hour:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        shoulder_end_hour:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        is_active:
+          type: boolean
+        notes:
+          type: string
+    PatchedUserProfileUpdateRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 1
+          description: Required. 150 characters or fewer. Letters, digits and @/./+/-/_
+            only.
+          pattern: ^[\w.@+-]+$
+          maxLength: 150
+        email:
+          title: Email address
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 254
+          - type: string
+            maxLength: 0
+        first_name:
+          type: string
+          maxLength: 150
+        last_name:
+          type: string
+          maxLength: 150
+        avatar:
+          type: string
+          format: binary
+          writeOnly: true
+          nullable: true
+    ProfileUploadRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+          description: CSV/TXT/XLS/XLSX profile file. NEM12 is supported for load-role
+            CSV/TXT uploads.
+        data_role:
+          allOf:
+          - $ref: '#/components/schemas/DataRoleEnum'
+          description: |-
+            Whether the file contains household load, PV generation, or both.
+
+            * `load` - load
+            * `pv` - pv
+            * `combined` - combined
+        value_kind:
+          allOf:
+          - $ref: '#/components/schemas/ValueKindEnum'
+          default: auto
+        interval_minutes:
+          type: integer
+          maximum: 1440
+          minimum: 1
+          description: Optional interval length when it cannot be inferred from timestamps/file
+            structure.
+        consent:
+          type: boolean
+      required:
+      - consent
+      - data_role
+      - file
+    ProfileUploadResponse:
+      type: object
+      properties:
+        upload_token:
+          type: string
+          format: uuid
+        original_name:
+          type: string
+        detected_format:
+          type: string
+        data_role:
+          type: string
+        interval_minutes:
+          type: integer
+        value_kind:
+          type: string
+        interval_count:
+          type: integer
+        warnings:
+          type: array
+          items:
+            type: string
+        expires_at:
+          type: string
+          format: date-time
+      required:
+      - data_role
+      - detected_format
+      - expires_at
+      - interval_count
+      - interval_minutes
+      - original_name
+      - upload_token
+      - value_kind
+      - warnings
+    ReadinessComponent:
+      type: object
+      properties:
+        ready:
+          type: boolean
+        detail:
+          type: string
+          nullable: true
+      required:
+      - ready
+    ReadinessEngine:
+      type: object
+      properties:
+        ready:
+          type: boolean
+        engine:
+          type: string
+          nullable: true
+        octave_version:
+          type: string
+          nullable: true
+        algorithm_source_present:
+          type: boolean
+          nullable: true
+        algorithm_sha256:
+          type: string
+          nullable: true
+        detail:
+          type: string
+          nullable: true
+      required:
+      - algorithm_sha256
+      - algorithm_source_present
+      - detail
+      - engine
+      - octave_version
+      - ready
+    ReadinessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Either "ready" or "not_ready".
+        service:
+          type: string
+        calculation_engine:
+          type: string
+        database:
+          $ref: '#/components/schemas/ReadinessComponent'
+        storage:
+          $ref: '#/components/schemas/ReadinessComponent'
+        engine:
+          $ref: '#/components/schemas/ReadinessEngine'
+      required:
+      - calculation_engine
+      - database
+      - engine
+      - service
+      - status
+    RegisterRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 150
+        email:
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 254
+          - type: string
+            maxLength: 0
+        first_name:
+          type: string
+          maxLength: 150
+        last_name:
+          type: string
+          maxLength: 150
+        password:
+          type: string
+          writeOnly: true
+          minLength: 8
+          maxLength: 128
+      required:
+      - password
+      - username
+    SourceModeEnum:
+      enum:
+      - upload
+      type: string
+      description: '* `upload` - Uploaded client workbook'
+    SourceModeSummary:
+      type: object
+      properties:
+        source_mode:
+          type: string
+        count:
+          type: integer
+      required:
+      - count
+      - source_mode
+    StatusEnum:
+      enum:
+      - processing
+      - completed
+      - failed
+      type: string
+      description: |-
+        * `processing` - Processing
+        * `completed` - Completed
+        * `failed` - Failed
+    TariffPlan:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 120
+        provider:
+          type: string
+          maxLength: 120
+        kind:
+          $ref: '#/components/schemas/KindEnum'
+        flat_import_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+          nullable: true
+        peak_import_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+          nullable: true
+        shoulder_import_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+          nullable: true
+        offpeak_import_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+          nullable: true
+        feed_in_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,5})?$
+        daily_supply_charge:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,4})?$
+        demand_charge_rate_per_kw_day:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,4})?$
+        peak_start_hour:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        peak_end_hour:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        shoulder_start_hour:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        shoulder_end_hour:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        notes:
+          type: string
+      required:
+      - id
+      - name
+    TokenRefresh:
+      type: object
+      properties:
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+      required:
+      - access
+      - refresh
+    TokenRefreshRequest:
+      type: object
+      properties:
+        refresh:
+          type: string
+          minLength: 1
+      required:
+      - refresh
+    TransientCsv:
+      type: object
+      properties:
+        filename:
+          type: string
+        content_type:
+          type: string
+        size_bytes:
+          type: integer
+        sha256:
+          type: string
+        base64_data:
+          type: string
+          description: Base64-encoded Results_RPAtrail400.csv returned only when retain_data=false.
+            The backend does not persist it.
+      required:
+      - base64_data
+      - content_type
+      - filename
+      - sha256
+      - size_bytes
+    UserSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        username:
+          type: string
+          readOnly: true
+          description: Required. 150 characters or fewer. Letters, digits and @/./+/-/_
+            only.
+        email:
+          type: string
+          format: email
+          readOnly: true
+          title: Email address
+        first_name:
+          type: string
+          readOnly: true
+        last_name:
+          type: string
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        is_staff:
+          type: boolean
+          readOnly: true
+          title: Staff status
+          description: Designates whether the user can log into this admin site.
+        avatar_download_path:
+          type: string
+          nullable: true
+          readOnly: true
+      required:
+      - avatar_download_path
+      - email
+      - first_name
+      - id
+      - is_staff
+      - last_name
+      - name
+      - username
+    UserTokenObtainPairRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          writeOnly: true
+          minLength: 1
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - password
+      - username
+    ValueKindEnum:
+      enum:
+      - auto
+      - energy_kwh_interval
+      - power_kw
+      type: string
+      description: |-
+        * `auto` - auto
+        * `energy_kwh_interval` - energy_kwh_interval
+        * `power_kw` - power_kw
+  securitySchemes:
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+tags:
+- name: System
+  description: Service liveness, readiness and API discovery.
+- name: Calculations
+  description: Legacy client-workbook calculations, stored artifacts and protected
+    downloads.
+- name: User Accounts
+  description: Optional user registration, authentication, profile/avatar management
+    and owned calculation history.
+- name: Profile Uploads
+  description: Validate and temporarily stage interval load/PV profiles.
+- name: Tariffs
+  description: Read available electricity tariff definitions.
+- name: Feedback
+  description: Public project feedback endpoints.
+- name: Admin Authentication
+  description: JWT authentication for staff/admin endpoints.
+- name: Admin Dashboard
+  description: Staff-only calculation audit, stored-file downloads and analytics.
+- name: Admin Tariffs
+  description: Staff-only tariff management.
+- name: Admin Feedback
+  description: Staff-only feedback moderation.
+- name: GNU Octave diagnostics
+  description: Optional deployment/parity checks; disabled by default in production.

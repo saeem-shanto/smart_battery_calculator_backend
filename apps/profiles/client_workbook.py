@@ -9,6 +9,9 @@ from pathlib import Path
 from django.conf import settings
 
 
+MAX_CLIENT_RAW_ROWS = 100_002
+
+
 class ClientWorkbookError(ValueError):
     pass
 
@@ -27,7 +30,7 @@ def _empty(value) -> bool:
 
 
 def _read_rows(name: str, raw: bytes) -> tuple[list[list], str, int]:
-    """Read only the first two data columns while retaining source column count."""
+    """Read the first two columns with a hard raw-row cap for resource safety."""
     suffix = Path(name).suffix.lower()
     try:
         if suffix == ".xls":
@@ -36,6 +39,8 @@ def _read_rows(name: str, raw: bytes) -> tuple[list[list], str, int]:
             book = xlrd.open_workbook(file_contents=raw, on_demand=True)
             try:
                 sheet = book.sheet_by_index(0)
+                if sheet.nrows > MAX_CLIENT_RAW_ROWS:
+                    raise ClientWorkbookError("The workbook contains too many rows.")
                 max_columns = int(sheet.ncols)
                 rows = [
                     [sheet.cell_value(r, c) for c in range(min(sheet.ncols, 2))]
@@ -52,10 +57,14 @@ def _read_rows(name: str, raw: bytes) -> tuple[list[list], str, int]:
             try:
                 sheet = workbook.active
                 max_columns = int(sheet.max_column or 0)
-                rows = [
-                    list(row)
-                    for row in sheet.iter_rows(min_col=1, max_col=2, values_only=True)
-                ]
+                rows = []
+                for index, row in enumerate(
+                    sheet.iter_rows(min_col=1, max_col=2, values_only=True),
+                    start=1,
+                ):
+                    if index > MAX_CLIENT_RAW_ROWS:
+                        raise ClientWorkbookError("The workbook contains too many rows.")
+                    rows.append(list(row))
             finally:
                 workbook.close()
             return rows, "xlsx", max_columns
@@ -67,10 +76,14 @@ def _read_rows(name: str, raw: bytes) -> tuple[list[list], str, int]:
                 text = raw.decode("latin-1")
             rows = []
             max_columns = 0
-            for row in csv.reader(io.StringIO(text)):
+            for index, row in enumerate(csv.reader(io.StringIO(text)), start=1):
+                if index > MAX_CLIENT_RAW_ROWS:
+                    raise ClientWorkbookError("The workbook contains too many rows.")
                 max_columns = max(max_columns, len(row))
                 rows.append(list(row[:2]))
             return rows, suffix.lstrip("."), max_columns
+    except ClientWorkbookError:
+        raise
     except ImportError as exc:
         dependency = "xlrd" if suffix == ".xls" else "openpyxl"
         raise ClientWorkbookError(
@@ -78,7 +91,7 @@ def _read_rows(name: str, raw: bytes) -> tuple[list[list], str, int]:
             "Install backend requirements first."
         ) from exc
     except Exception as exc:
-        raise ClientWorkbookError(f"Could not read {suffix or 'uploaded'} file: {exc}") from exc
+        raise ClientWorkbookError(f"Could not read {suffix or 'uploaded'} file.") from exc
 
     raise ClientWorkbookError("Supported client workbook formats are XLS, XLSX, CSV and TXT.")
 

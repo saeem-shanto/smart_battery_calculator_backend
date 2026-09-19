@@ -1,6 +1,7 @@
 import logging
 
 from django.conf import settings
+from django.core.files.storage import default_storage
 from django.db import connection
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiResponse, extend_schema
@@ -65,7 +66,7 @@ def health(request):
 @extend_schema(
     tags=["System"],
     summary="Readiness check",
-    description="Checks the database and GNU Octave runtime/source availability.",
+    description="Checks PostgreSQL, retained-file storage and GNU Octave runtime/source availability.",
     responses={
         200: ReadinessResponseSerializer,
         503: OpenApiResponse(response=ReadinessResponseSerializer, description="A required component is not ready."),
@@ -85,6 +86,14 @@ def readiness(request):
         logger.warning("Database readiness check failed: %s", type(exc).__name__)
         database["detail"] = "Database connection unavailable."
 
+    storage_component = {"ready": True, "detail": None}
+    if settings.SUPABASE_STORAGE_ENABLED:
+        try:
+            default_storage.exists("__smart_battery_storage_healthcheck__")
+        except Exception as exc:  # pragma: no cover - external storage
+            logger.warning("Storage readiness check failed: %s", type(exc).__name__)
+            storage_component = {"ready": False, "detail": "Supabase Storage unavailable."}
+
     raw = OctaveEngine().status()
     engine = {
         "ready": bool(raw.get("runtime_ready")),
@@ -95,12 +104,13 @@ def readiness(request):
         "detail": None if raw.get("runtime_ready") else "GNU Octave runtime or algorithm source unavailable.",
     }
 
-    ready = bool(database["ready"] and engine["ready"])
+    ready = bool(database["ready"] and storage_component["ready"] and engine["ready"])
     payload = {
         "status": "ready" if ready else "not_ready",
         "service": "smart-battery-api",
         "calculation_engine": settings.CALCULATION_ENGINE,
         "database": database,
+        "storage": storage_component,
         "engine": engine,
     }
     return Response(payload, status=status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE)

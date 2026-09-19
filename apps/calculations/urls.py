@@ -4,12 +4,14 @@ from .views import (
     CalculationDetailView,
     CalculationFileDownloadView,
     CalculationFileListView,
+    CalculationClaimView,
     ClientWorkbookCalculationView,
 )
 
 urlpatterns = [
     path("client-workbook/", ClientWorkbookCalculationView.as_view(), name="calculation-client-workbook"),
     path("<uuid:public_id>/", CalculationDetailView.as_view(), name="calculation-detail"),
+    path("<uuid:public_id>/claim/", CalculationClaimView.as_view(), name="calculation-claim"),
     path("<uuid:public_id>/files/", CalculationFileListView.as_view(), name="calculation-files"),
     path(
         "<uuid:public_id>/files/<uuid:file_id>/download/",

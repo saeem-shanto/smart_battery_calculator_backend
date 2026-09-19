@@ -1,5 +1,7 @@
 import json
+from pathlib import Path
 
+from django.conf import settings
 from rest_framework import serializers
 
 
@@ -45,8 +47,19 @@ class CalculationFileSerializer(serializers.Serializer):
     delete_path = serializers.CharField(required=False)
 
 
+class TransientCsvSerializer(serializers.Serializer):
+    filename = serializers.CharField()
+    content_type = serializers.CharField()
+    size_bytes = serializers.IntegerField()
+    sha256 = serializers.CharField()
+    base64_data = serializers.CharField(
+        help_text="Base64-encoded Results_RPAtrail400.csv returned only when retain_data=false. The backend does not persist it."
+    )
+
+
 class CalculationDetailResponseSerializer(serializers.Serializer):
     public_id = serializers.UUIDField()
+    retained = serializers.BooleanField(default=True)
     status = serializers.CharField()
     postcode = serializers.CharField(allow_blank=True)
     suburb = serializers.CharField(allow_blank=True)
@@ -59,31 +72,64 @@ class CalculationDetailResponseSerializer(serializers.Serializer):
     algorithm_version = serializers.CharField()
     runtime_ms = serializers.IntegerField()
     files = CalculationFileSerializer(many=True)
+    transient_csv = TransientCsvSerializer(required=False, allow_null=True)
     created_at = serializers.DateTimeField()
 
 
-class CalculationCreateResponseSerializer(CalculationDetailResponseSerializer):
+class CalculationCreateResponseSerializer(serializers.Serializer):
+    public_id = serializers.UUIDField(allow_null=True)
     access_token = serializers.CharField(
-        help_text="Returned once. Store it securely and send it later in X-Calculation-Token."
+        required=False,
+        allow_null=True,
+        help_text=("Returned for retained guest calculations. Authenticated owners use their Bearer JWT instead; "
+            "transient calculations return null."),
     )
+    retained = serializers.BooleanField()
+    status = serializers.CharField()
+    postcode = serializers.CharField(allow_blank=True)
+    suburb = serializers.CharField(allow_blank=True)
+    state = serializers.CharField(allow_blank=True)
+    metadata = serializers.JSONField()
+    input_filename = serializers.CharField(allow_null=True)
+    result = BatteryCalculationResultSerializer()
+    assumptions = serializers.ListField(child=serializers.CharField())
+    warnings = serializers.ListField(child=serializers.CharField())
+    algorithm_version = serializers.CharField()
+    runtime_ms = serializers.IntegerField()
+    files = CalculationFileSerializer(many=True)
+    transient_csv = TransientCsvSerializer(required=False, allow_null=True)
+    created_at = serializers.DateTimeField()
 
 
 class ClientWorkbookCalculationSerializer(serializers.Serializer):
     file = serializers.FileField(
         help_text=(
             "Original client workbook. XLS/XLSX/CSV/TXT are accepted; column 1 is the legacy/base PV profile and "
-            "column 2 is household load. The uploaded filename and exact bytes are preserved while the stored input exists."
+            "column 2 is household load."
         )
     )
+    retain_data = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text=(
+            "Privacy/retention choice. If true, the unique input, canonical Results_RPAtrail400.csv and calculation "
+            "record are persisted for later download/admin audit. If false, the request is processed transiently, "
+            "no application database rows or file bytes are retained, and the CSV is returned inline in the response."
+        ),
+    )
     consent = serializers.BooleanField(
-        help_text="Must be true to confirm storage and processing of the uploaded household energy file."
+        required=False,
+        help_text=(
+            "Deprecated compatibility field. Older clients that omit retain_data use this value as the retention choice. "
+            "New clients should send retain_data explicitly."
+        ),
     )
     postcode = serializers.RegexField(
         regex=r"^\d{4}$",
         required=False,
         allow_blank=True,
         default="",
-        help_text="Optional Australian 4-digit postcode stored with the calculation record for admin search/filtering.",
+        help_text="Optional Australian 4-digit postcode. Persisted only when retain_data=true.",
     )
     suburb = serializers.CharField(required=False, allow_blank=True, default="", max_length=120)
     state = serializers.CharField(required=False, allow_blank=True, default="", max_length=40)
@@ -91,8 +137,8 @@ class ClientWorkbookCalculationSerializer(serializers.Serializer):
         required=False,
         default=dict,
         help_text=(
-            "Optional JSON object for additional non-algorithm record information, e.g. property type, scenario label, "
-            "or project reference. In multipart/form-data this may be sent as a JSON string."
+            "Optional JSON object for non-algorithm record information. Persisted only when retain_data=true. "
+            "In multipart/form-data this may be sent as a JSON string."
         ),
     )
     battery_installed_cost_per_kwh = serializers.FloatField(
@@ -105,12 +151,26 @@ class ClientWorkbookCalculationSerializer(serializers.Serializer):
         ),
     )
 
-    def validate_consent(self, value):
-        if value is not True:
+    def validate_file(self, value):
+        max_bytes = settings.PROFILE_UPLOAD_MAX_MB * 1024 * 1024
+        if getattr(value, "size", 0) > max_bytes:
             raise serializers.ValidationError(
-                "Consent to store and process the uploaded household energy file is required."
+                f"File exceeds the {settings.PROFILE_UPLOAD_MAX_MB} MB upload limit."
             )
+        suffix = Path(value.name or "").suffix.lower()
+        if suffix not in {".xls", ".xlsx", ".csv", ".txt"}:
+            raise serializers.ValidationError("Supported file formats are XLS, XLSX, CSV and TXT.")
+        if getattr(value, "size", 0) == 0:
+            raise serializers.ValidationError("The uploaded file is empty.")
         return value
+
+    def validate(self, attrs):
+        # Backward compatibility for the v1.3 Postman/frontend contract. New
+        # clients should always send retain_data explicitly. Privacy-safe
+        # default remains false when neither field is supplied.
+        if "retain_data" not in self.initial_data:
+            attrs["retain_data"] = bool(attrs.get("consent", False))
+        return attrs
 
     def validate_metadata(self, value):
         if isinstance(value, str):

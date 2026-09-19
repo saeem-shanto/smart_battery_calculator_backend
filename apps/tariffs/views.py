@@ -1,4 +1,4 @@
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import AllowAny
 
@@ -6,15 +6,17 @@ from .models import TariffPlan
 from .serializers import TariffPlanSerializer
 
 
-@extend_schema(
-    tags=["Tariffs"],
-    summary="List active electricity tariffs",
-    description=(
-        "Returns tariff definitions available to the calculator. The client legacy Octave algorithm currently "
-        "accepts flat retail/FIT rates only; incompatible tariff structures are rejected during calculation."
-    ),
-    responses={200: TariffPlanSerializer(many=True)},
-    operation_id="tariff_list",
+@extend_schema_view(
+    get=extend_schema(
+        tags=["Tariffs"],
+        summary="List active electricity tariffs",
+        description=(
+            "Returns tariff definitions available to the calculator. The client legacy Octave algorithm currently "
+            "accepts flat retail/FIT rates only; incompatible tariff structures are rejected during calculation."
+        ),
+        responses={200: TariffPlanSerializer(many=True)},
+        operation_id="tariff_list",
+    )
 )
 class TariffListView(ListAPIView):
     permission_classes = [AllowAny]

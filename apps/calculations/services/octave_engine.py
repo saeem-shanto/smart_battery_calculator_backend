@@ -35,8 +35,8 @@ class OctaveEngine:
       - rpresults.m
 
     natpaymenttrail.m expects a file named ``Vanikavipuldata.xls`` and writes
-    ``Results_RPAtrail400.csv``. Django preserves the user's original uploaded
-    file bytes/filename in PostgreSQL. For execution only, the already-validated
+    ``Results_RPAtrail400.csv``. Django preserves retained upload metadata in PostgreSQL and file bytes in
+    the configured private storage backend. For execution only, the already-validated
     first two numeric columns are written into a private temporary compatibility
     file with the exact legacy filename expected by natpaymenttrail.m. The
     compatibility ``xlsread.m`` shim lives outside ``matlab_source`` so the

@@ -1,0 +1,27 @@
+{
+  "id": "526cb589-6156-4558-8461-64d21a03caa1",
+  "name": "Smart Battery Backend v1.5.2 - Local",
+  "values": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "adminUsername",
+      "value": "admin",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "adminPassword",
+      "value": "change-me",
+      "type": "secret",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment",
+  "_postman_exported_at": "2026-09-19T08:00:22.208351+00:00",
+  "_postman_exported_using": "OpenAI / Postman Collection v2.1"
+}

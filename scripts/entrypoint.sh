@@ -16,5 +16,8 @@ python manage.py check --deploy
 echo "[entrypoint] Validating GNU Octave runtime..."
 python manage.py octave_status
 
+echo "[entrypoint] Validating Supabase database/storage connectivity..."
+python manage.py storage_status
+
 echo "[entrypoint] Starting application server..."
 exec "$@"

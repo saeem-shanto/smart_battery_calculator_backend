@@ -1,6 +1,6 @@
 import io
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 
 from .parsers import parse_profile_file
 
@@ -48,3 +48,23 @@ class ClientWorkbookParserTests(SimpleTestCase):
         parsed = parse_client_workbook(upload)
         self.assertEqual(parsed.row_count, 2)
         self.assertTrue(any("header" in warning.lower() for warning in parsed.warnings))
+
+class ClientWorkbookValidationEndpointTests(TestCase):
+    def test_validation_endpoint_does_not_stage_or_store_profile(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+        from rest_framework.test import APIClient
+        from .models import ProfileUpload
+
+        client = APIClient()
+        upload = SimpleUploadedFile("client.csv", b"0.1,0.5\n0.2,0.6\n", content_type="text/csv")
+        with override_settings(REQUIRE_FULL_YEAR_PROFILE=False):
+            response = client.post(
+                "/api/v1/profiles/client-workbook/validate/",
+                {"file": upload},
+                format="multipart",
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["valid"])
+        self.assertEqual(response.data["row_count"], 2)
+        self.assertEqual(ProfileUpload.objects.count(), 0)

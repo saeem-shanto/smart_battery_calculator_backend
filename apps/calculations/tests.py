@@ -155,3 +155,75 @@ class IndependentArtifactDeletionTests(TestCase):
         self.assertIsNone(self.calculation.csv_result_id)
         self.assertTrue(Calculation.objects.filter(pk=self.calculation.pk).exists())
         self.assertTrue(StoredInputFile.objects.filter(pk=self.input_file.pk).exists())
+
+class TransientPrivacyCalculationTests(TestCase):
+    def test_no_retention_creates_no_database_rows_and_returns_inline_csv(self):
+        from unittest.mock import patch
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+        from rest_framework.test import APIClient
+
+        from .models import Calculation, StoredCsvResult, StoredInputFile
+        from .services.executor import EngineExecution
+
+        result = ResultContractTests()._result()
+        result.update({
+            "engine": "gnu-octave-original-matlab-v1",
+            "algorithm_source": "unchanged_client_matlab_files_v1",
+            "profile_duration_hours": 2,
+            "profile_is_full_year": False,
+        })
+        execution = EngineExecution(
+            engine_version="gnu-octave-original-matlab-v1",
+            result=result,
+            runtime_ms=12,
+            artifacts={"Results_RPAtrail400.csv": b"5,4,3,5,2,0.3773,50,0.124,50,5\n"},
+        )
+        client = APIClient()
+        upload = SimpleUploadedFile("private.csv", b"0.1,0.5\n0.2,0.6\n", content_type="text/csv")
+
+        with override_settings(REQUIRE_FULL_YEAR_PROFILE=False), patch(
+            "apps.calculations.views.execute_calculation", return_value=execution
+        ):
+            response = client.post(
+                "/api/v1/calculations/client-workbook/",
+                {
+                    "file": upload,
+                    "retain_data": "false",
+                    "postcode": "5000",
+                    "battery_installed_cost_per_kwh": "1000",
+                },
+                format="multipart",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["retained"])
+        self.assertIsNone(response.data["public_id"])
+        self.assertEqual(response.data["files"], [])
+        self.assertEqual(response.data["transient_csv"]["filename"], "Results_RPAtrail400.csv")
+        self.assertEqual(Calculation.objects.count(), 0)
+        self.assertEqual(StoredInputFile.objects.count(), 0)
+        self.assertEqual(StoredCsvResult.objects.count(), 0)
+
+
+class RetentionCompatibilitySerializerTests(SimpleTestCase):
+    def test_legacy_consent_true_maps_to_retention_true(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from .serializers import ClientWorkbookCalculationSerializer
+
+        serializer = ClientWorkbookCalculationSerializer(data={
+            "file": SimpleUploadedFile("x.csv", b"0,1\n", content_type="text/csv"),
+            "consent": True,
+        })
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertTrue(serializer.validated_data["retain_data"])
+
+    def test_default_is_privacy_safe(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from .serializers import ClientWorkbookCalculationSerializer
+
+        serializer = ClientWorkbookCalculationSerializer(data={
+            "file": SimpleUploadedFile("x.csv", b"0,1\n", content_type="text/csv"),
+        })
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertFalse(serializer.validated_data["retain_data"])

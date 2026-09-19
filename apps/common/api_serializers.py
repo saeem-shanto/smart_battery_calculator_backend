@@ -47,8 +47,11 @@ class ReadinessEngineSerializer(serializers.Serializer):
 
 
 class ReadinessResponseSerializer(serializers.Serializer):
-    status = serializers.ChoiceField(choices=["ready", "not_ready"])
+    # A CharField avoids an OpenAPI enum-name collision with Calculation.status
+    # while the runtime endpoint still emits only "ready" or "not_ready".
+    status = serializers.CharField(help_text='Either "ready" or "not_ready".')
     service = serializers.CharField()
     calculation_engine = serializers.CharField()
     database = ReadinessComponentSerializer()
+    storage = ReadinessComponentSerializer(required=False)
     engine = ReadinessEngineSerializer()

@@ -6,6 +6,10 @@ DEBUG = False
 
 if SECRET_KEY == "unsafe-dev-key-change-me":  # noqa: F405
     raise ImproperlyConfigured("SECRET_KEY must be set in production.")
+if len(SECRET_KEY.encode("utf-8")) < 32:  # noqa: F405
+    raise ImproperlyConfigured(
+        "SECRET_KEY must be at least 32 bytes long in production because it signs JWTs."
+    )
 
 if not env("DATABASE_URL", default="").strip():  # noqa: F405
     raise ImproperlyConfigured("DATABASE_URL must be set in production.")
@@ -34,3 +38,26 @@ SECURE_HSTS_PRELOAD = False
 
 WHITENOISE_AUTOREFRESH = False
 WHITENOISE_USE_FINDERS = False
+
+# Supabase Storage is mandatory for retained production artifacts.
+if not SUPABASE_STORAGE_ENABLED:  # noqa: F405
+    raise ImproperlyConfigured("SUPABASE_STORAGE_ENABLED must be True in production.")
+
+_required_storage = {
+    "SUPABASE_S3_ENDPOINT": SUPABASE_S3_ENDPOINT,  # noqa: F405
+    "SUPABASE_S3_REGION": SUPABASE_S3_REGION,  # noqa: F405
+    "SUPABASE_S3_ACCESS_KEY_ID": SUPABASE_S3_ACCESS_KEY_ID,  # noqa: F405
+    "SUPABASE_S3_SECRET_ACCESS_KEY": SUPABASE_S3_SECRET_ACCESS_KEY,  # noqa: F405
+    "SUPABASE_STORAGE_BUCKET": SUPABASE_STORAGE_BUCKET,  # noqa: F405
+}
+for _name, _value in _required_storage.items():
+    if not str(_value or "").strip():
+        raise ImproperlyConfigured(f"{_name} must be set in production.")
+
+# The production database must be PostgreSQL (Supabase).
+if DATABASES["default"]["ENGINE"] != "django.db.backends.postgresql":  # noqa: F405
+    raise ImproperlyConfigured("Production DATABASE_URL must point to PostgreSQL/Supabase.")
+DATABASES["default"].setdefault("OPTIONS", {})  # noqa: F405
+DATABASES["default"]["OPTIONS"].setdefault("sslmode", "require")  # noqa: F405
+DATABASES["default"]["OPTIONS"].setdefault("connect_timeout", DATABASE_CONNECT_TIMEOUT)  # noqa: F405
+DATABASES["default"]["OPTIONS"].setdefault("application_name", "smart-battery-api")  # noqa: F405

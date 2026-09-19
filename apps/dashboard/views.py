@@ -2,10 +2,9 @@ from datetime import timedelta
 from uuid import UUID
 
 from django.db.models import Avg, Count, Q
-from django.http import Http404, HttpResponse
+from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.utils.http import content_disposition_header
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status
@@ -37,7 +36,7 @@ class AdminSummaryView(APIView):
 
     def get(self, request):
         now = timezone.now()
-        qs = Calculation.objects.select_related("input_file", "csv_result").all()
+        qs = Calculation.objects.select_related("owner", "input_file", "csv_result").all()
         last7 = qs.filter(created_at__gte=now - timedelta(days=7))
         last30 = qs.filter(created_at__gte=now - timedelta(days=30))
         by_source = list(
@@ -90,7 +89,7 @@ _ADMIN_LIST_PARAMETERS = [
 class AdminCalculationListView(ListAPIView):
     permission_classes = [IsAdminUser]
     serializer_class = AdminCalculationListSerializer
-    queryset = Calculation.objects.select_related("input_file", "csv_result").all()
+    queryset = Calculation.objects.select_related("owner", "input_file", "csv_result").all()
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -127,6 +126,8 @@ class AdminCalculationListView(ListAPIView):
                 | Q(state__icontains=query)
                 | Q(input_payload__original_filename__icontains=query)
                 | Q(input_payload__input_sha256__icontains=query)
+                | Q(owner__username__icontains=query)
+                | Q(owner__email__icontains=query)
             )
             try:
                 search_q |= Q(public_id=UUID(query))
@@ -145,7 +146,7 @@ class AdminCalculationListView(ListAPIView):
 class AdminCalculationDetailView(RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAdminUser]
     serializer_class = AdminCalculationSerializer
-    queryset = Calculation.objects.select_related("input_file", "csv_result").all()
+    queryset = Calculation.objects.select_related("owner", "input_file", "csv_result").all()
     lookup_field = "public_id"
     lookup_url_kwarg = "public_id"
 
@@ -160,14 +161,13 @@ class AdminCalculationFileDownloadView(APIView):
 
     def get(self, request, public_id, file_id):
         calculation = get_object_or_404(
-            Calculation.objects.select_related("input_file", "csv_result"), public_id=public_id
+            Calculation.objects.select_related("owner", "input_file", "csv_result"), public_id=public_id
         )
         artifact = resolve_artifact(calculation, file_id)
         if artifact is None:
             raise Http404
-        data, content_type, filename, size_bytes = artifact
-        response = HttpResponse(data, content_type=content_type)
-        response["Content-Disposition"] = content_disposition_header(True, filename)
+        file_obj, content_type, filename, size_bytes = artifact
+        response = FileResponse(file_obj, as_attachment=True, filename=filename, content_type=content_type)
         response["Content-Length"] = str(size_bytes)
         response["Cache-Control"] = "private, no-store"
         return response
@@ -191,7 +191,7 @@ class AdminCalculationFileDeleteView(APIView):
 
     def delete(self, request, public_id, file_id):
         calculation = get_object_or_404(
-            Calculation.objects.select_related("input_file", "csv_result"), public_id=public_id
+            Calculation.objects.select_related("owner", "input_file", "csv_result"), public_id=public_id
         )
         artifact = resolve_artifact_object(calculation, file_id)
         if artifact is None:

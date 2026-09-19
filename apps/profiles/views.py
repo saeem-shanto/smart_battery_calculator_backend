@@ -12,27 +12,83 @@ from rest_framework.views import APIView
 
 from apps.common.api_serializers import ApiErrorSerializer
 
+from .client_workbook import ClientWorkbookError, parse_client_workbook
 from .models import ProfileUpload
 from .parsers import ProfileParseError, parse_profile_file
-from .serializers import ProfileUploadResponseSerializer, ProfileUploadSerializer
-
-
-@extend_schema(
-    tags=["Profile Uploads"],
-    summary="Validate and stage an interval profile",
-    description=(
-        "Validates a load/PV profile and stores only its parsed normalized payload for a limited time. "
-        "The returned upload_token can be used with POST /api/v1/calculations/."
-    ),
-    request=ProfileUploadSerializer,
-    responses={201: ProfileUploadResponseSerializer, 400: ApiErrorSerializer},
-    operation_id="profile_upload_validate",
+from .serializers import (
+    ClientWorkbookValidationResponseSerializer,
+    ClientWorkbookValidationSerializer,
+    ProfileUploadResponseSerializer,
+    ProfileUploadSerializer,
 )
+
+
+class ClientWorkbookValidationView(APIView):
+    permission_classes = [AllowAny]
+    parser_classes = [MultiPartParser, FormParser]
+    throttle_scope = "uploads"
+
+    @extend_schema(
+        tags=["Profile Uploads"],
+        summary="Validate a client workbook without retaining it",
+        description=(
+            "Parses the exact workbook convention used by the immutable MATLAB/Octave workflow and validates the "
+            "production full-year requirement. This endpoint is privacy-safe: it does not create database rows and does "
+            "not retain uploaded bytes or parsed household values after the request completes."
+        ),
+        request=ClientWorkbookValidationSerializer,
+        responses={200: ClientWorkbookValidationResponseSerializer, 400: ApiErrorSerializer},
+        operation_id="client_workbook_validate_transient",
+    )
+    def post(self, request):
+        serializer = ClientWorkbookValidationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        upload = serializer.validated_data["file"]
+
+        try:
+            workbook = parse_client_workbook(upload)
+        except ClientWorkbookError as exc:
+            raise ValidationError({"file": [str(exc)]}) from exc
+
+        if settings.REQUIRE_FULL_YEAR_PROFILE and workbook.row_count not in {8760, 8784}:
+            raise ValidationError(
+                {
+                    "file": [
+                        "A production calculation requires a complete 8760-hour year (8784 for leap years). "
+                        f"This file contains {workbook.row_count} usable rows."
+                    ]
+                }
+            )
+
+        return Response(
+            {
+                "valid": True,
+                "original_name": upload.name,
+                "detected_format": workbook.detected_format,
+                "row_count": workbook.row_count,
+                "profile_is_full_year": workbook.row_count in {8760, 8784},
+                "warnings": list(workbook.warnings or []),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class ProfileUploadView(APIView):
     permission_classes = [AllowAny]
     parser_classes = [MultiPartParser, FormParser]
     throttle_scope = "uploads"
 
+    @extend_schema(
+        tags=["Profile Uploads"],
+        summary="Validate and stage an interval profile",
+        description=(
+            "Validates a load/PV profile and stores only its parsed normalized payload for a limited time. "
+            "This legacy staging endpoint is separate from the privacy-safe client workbook validation endpoint."
+        ),
+        request=ProfileUploadSerializer,
+        responses={201: ProfileUploadResponseSerializer, 400: ApiErrorSerializer},
+        operation_id="profile_upload_validate",
+    )
     def post(self, request):
         ProfileUpload.objects.filter(expires_at__lte=timezone.now()).delete()
         serializer = ProfileUploadSerializer(data=request.data)

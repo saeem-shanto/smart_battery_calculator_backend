@@ -39,15 +39,15 @@ def _translate_engine_error(exc: Exception):
     raise exc
 
 
-@extend_schema(
-    tags=["GNU Octave diagnostics"],
-    summary="Check GNU Octave and immutable MATLAB source status",
-    responses={200: OctaveStatusSerializer, 503: OctaveStatusSerializer, 404: ApiErrorSerializer},
-    operation_id="octave_status",
-)
 class OctaveStatusView(APIView):
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        tags=["GNU Octave diagnostics"],
+        summary="Check GNU Octave and immutable MATLAB source status",
+        responses={200: OctaveStatusSerializer, 503: OctaveStatusSerializer, 404: ApiErrorSerializer},
+        operation_id="octave_status",
+    )
     def get(self, request):
         _ensure_enabled()
         body = OctaveEngine().status()
@@ -56,27 +56,27 @@ class OctaveStatusView(APIView):
         return Response(body, status=status.HTTP_200_OK if body["runtime_ready"] else status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
-@extend_schema(
-    tags=["GNU Octave diagnostics"],
-    summary="Run unchanged MATLAB source from diagnostic arrays",
-    description="The arrays are treated as the same legacy base-PV/load columns expected by Vanikavipuldata.xls.",
-    request=OctaveTestSerializer,
-    responses={200: OctaveTestResponseSerializer, 400: ApiErrorSerializer, 404: ApiErrorSerializer, 502: ApiErrorSerializer, 503: ApiErrorSerializer},
-    operation_id="octave_direct_test",
-    examples=[OpenApiExample(
-        "24-hour legacy-style test",
-        request_only=True,
-        value={
-            "pv_profile": [0,0,0,0,0,0.05,0.15,0.35,0.55,0.75,0.9,1,0.95,0.85,0.7,0.5,0.3,0.12,0.03,0,0,0,0,0],
-            "load_profile": [0.35,0.3,0.28,0.26,0.3,0.4,0.55,0.6,0.5,0.4,0.35,0.3,0.32,0.35,0.4,0.5,0.75,1.1,1.3,1,0.8,0.65,0.5,0.4],
-            "battery_installed_cost_per_kwh": 1000,
-        },
-    )],
-)
 class OctaveTestView(APIView):
     permission_classes = [AllowAny]
     throttle_scope = "diagnostics"
 
+    @extend_schema(
+        tags=["GNU Octave diagnostics"],
+        summary="Run unchanged MATLAB source from diagnostic arrays",
+        description="The arrays are treated as the same legacy base-PV/load columns expected by Vanikavipuldata.xls.",
+        request=OctaveTestSerializer,
+        responses={200: OctaveTestResponseSerializer, 400: ApiErrorSerializer, 404: ApiErrorSerializer, 502: ApiErrorSerializer, 503: ApiErrorSerializer},
+        operation_id="octave_direct_test",
+        examples=[OpenApiExample(
+            "24-hour legacy-style test",
+            request_only=True,
+            value={
+                "pv_profile": [0,0,0,0,0,0.05,0.15,0.35,0.55,0.75,0.9,1,0.95,0.85,0.7,0.5,0.3,0.12,0.03,0,0,0,0,0],
+                "load_profile": [0.35,0.3,0.28,0.26,0.3,0.4,0.55,0.6,0.5,0.4,0.35,0.3,0.32,0.35,0.4,0.5,0.75,1.1,1.3,1,0.8,0.65,0.5,0.4],
+                "battery_installed_cost_per_kwh": 1000,
+            },
+        )],
+    )
     def post(self, request):
         _ensure_enabled()
         serializer = OctaveTestSerializer(data=request.data)
@@ -89,18 +89,18 @@ class OctaveTestView(APIView):
         return Response({"ok": True, "runtime_ms": execution.runtime_ms, "result": execution.result})
 
 
-@extend_schema(
-    tags=["GNU Octave diagnostics"],
-    summary="Run unchanged MATLAB source from a client workbook without saving it",
-    request=OctaveFileSerializer,
-    responses={200: OctaveFileTestResponseSerializer, 400: ApiErrorSerializer, 404: ApiErrorSerializer, 502: ApiErrorSerializer, 503: ApiErrorSerializer},
-    operation_id="octave_workbook_test",
-)
 class OctaveFileTestView(APIView):
     permission_classes = [AllowAny]
     parser_classes = [MultiPartParser, FormParser]
     throttle_scope = "diagnostics"
 
+    @extend_schema(
+        tags=["GNU Octave diagnostics"],
+        summary="Run unchanged MATLAB source from a client workbook without saving it",
+        request=OctaveFileSerializer,
+        responses={200: OctaveFileTestResponseSerializer, 400: ApiErrorSerializer, 404: ApiErrorSerializer, 502: ApiErrorSerializer, 503: ApiErrorSerializer},
+        operation_id="octave_workbook_test",
+    )
     def post(self, request):
         _ensure_enabled()
         serializer = OctaveFileSerializer(data=request.data)

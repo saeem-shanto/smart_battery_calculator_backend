@@ -1,11 +1,13 @@
 from django.contrib import admin
 from django.db.models import Count
-from django.http import HttpResponse
+from io import BytesIO
+
+from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.urls import path, reverse
 from django.utils.html import format_html
-from django.utils.http import content_disposition_header
 
+from .artifact_access import artifact_exists
 from .models import Calculation, StoredCsvResult, StoredInputFile
 
 
@@ -13,6 +15,7 @@ from .models import Calculation, StoredCsvResult, StoredInputFile
 class CalculationAdmin(admin.ModelAdmin):
     list_display = (
         "public_id",
+        "owner",
         "postcode",
         "location",
         "status",
@@ -35,8 +38,10 @@ class CalculationAdmin(admin.ModelAdmin):
         "input_file__sha256",
         "input_file__canonical_filename",
         "csv_result__sha256",
+        "owner__username",
+        "owner__email",
     )
-    list_select_related = ("input_file", "csv_result")
+    list_select_related = ("owner", "input_file", "csv_result")
     date_hierarchy = "created_at"
     ordering = ("-created_at",)
 
@@ -46,6 +51,7 @@ class CalculationAdmin(admin.ModelAdmin):
         "id",
         "public_id",
         "access_token_hash",
+        "owner",
         "input_file",
         "csv_result",
         "status",
@@ -65,6 +71,7 @@ class CalculationAdmin(admin.ModelAdmin):
     )
     fields = (
         "public_id",
+        "owner",
         "postcode",
         "suburb",
         "state",
@@ -98,11 +105,11 @@ class CalculationAdmin(admin.ModelAdmin):
 
     @admin.display(boolean=True, description="Input")
     def has_input_file(self, obj):
-        return bool(obj.input_file_id)
+        return bool(obj.input_file_id and artifact_exists(obj.input_file))
 
     @admin.display(boolean=True, description="CSV")
     def has_csv_file(self, obj):
-        return bool(obj.csv_result_id)
+        return bool(obj.csv_result_id and artifact_exists(obj.csv_result))
 
     @admin.display(description="Battery kWh")
     def optimal_battery_kwh(self, obj):
@@ -149,6 +156,7 @@ class StoredInputFileAdmin(admin.ModelAdmin):
         "canonical_filename",
         "content_type",
         "size_bytes",
+        "storage_file",
         "detected_format",
         "row_count",
         "parsing_warnings",
@@ -192,8 +200,17 @@ class StoredInputFileAdmin(admin.ModelAdmin):
 
     def download_view(self, request, object_id):
         obj = get_object_or_404(StoredInputFile, pk=object_id)
-        response = HttpResponse(bytes(obj.data), content_type=obj.content_type)
-        response["Content-Disposition"] = content_disposition_header(True, obj.canonical_filename)
+        if obj.storage_file and obj.storage_file.name:
+            try:
+                obj.storage_file.open("rb")
+                file_obj = obj.storage_file
+            except Exception as exc:
+                raise Http404 from exc
+        elif obj.data is not None:
+            file_obj = BytesIO(bytes(obj.data))
+        else:
+            raise Http404
+        response = FileResponse(file_obj, as_attachment=True, filename=obj.canonical_filename, content_type=obj.content_type)
         response["Content-Length"] = str(obj.size_bytes)
         response["Cache-Control"] = "private, no-store"
         return response
@@ -229,6 +246,7 @@ class StoredCsvResultAdmin(admin.ModelAdmin):
         "content_type",
         "size_bytes",
         "sha256",
+        "storage_file",
         "result_payload",
         "engine_version",
         "algorithm_sha256",
@@ -272,8 +290,17 @@ class StoredCsvResultAdmin(admin.ModelAdmin):
 
     def download_view(self, request, object_id):
         obj = get_object_or_404(StoredCsvResult, pk=object_id)
-        response = HttpResponse(bytes(obj.data), content_type=obj.content_type)
-        response["Content-Disposition"] = content_disposition_header(True, obj.filename)
+        if obj.storage_file and obj.storage_file.name:
+            try:
+                obj.storage_file.open("rb")
+                file_obj = obj.storage_file
+            except Exception as exc:
+                raise Http404 from exc
+        elif obj.data is not None:
+            file_obj = BytesIO(bytes(obj.data))
+        else:
+            raise Http404
+        response = FileResponse(file_obj, as_attachment=True, filename=obj.filename, content_type=obj.content_type)
         response["Content-Length"] = str(obj.size_bytes)
         response["Cache-Control"] = "private, no-store"
         return response
