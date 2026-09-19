@@ -176,6 +176,8 @@ REST_FRAMEWORK = {
         "diagnostics": "10/hour",
         "auth": "10/minute",
         "registration": "5/hour",
+        "two_factor": "10/minute",
+        "password_reset": "5/hour",
     },
 }
 
@@ -194,7 +196,7 @@ SPECTACULAR_SETTINGS = {
         "Production API for Project N01. The original client MATLAB files are executed unchanged under GNU Octave. "
         "Retained input files and canonical CSV result artifacts are persisted in Supabase Storage; record metadata is persisted in PostgreSQL."
     ),
-    "VERSION": "1.5.1",
+    "VERSION": "1.5.8",
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
     "SCHEMA_PATH_PREFIX": r"/api/v1",
@@ -225,6 +227,24 @@ SPECTACULAR_SETTINGS = {
         "tryItOutEnabled": True,
     },
 }
+
+
+# Email-based account security (2FA + password reset)
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000").rstrip("/")
+ACCOUNT_EMAIL_ENABLED = env.bool("ACCOUNT_EMAIL_ENABLED", default=False)
+EMAIL_BACKEND = env("EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend")
+EMAIL_HOST = env("EMAIL_HOST", default="smtp.gmail.com")
+EMAIL_PORT = env.int("EMAIL_PORT", default=587)
+EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="").strip()
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="").strip()
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default=EMAIL_HOST_USER or "Smart Battery Calculator <no-reply@example.invalid>")
+EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=15)
+PASSWORD_RESET_TIMEOUT = env.int("PASSWORD_RESET_TIMEOUT_SECONDS", default=3600)
+TWO_FACTOR_OTP_TTL_SECONDS = env.int("TWO_FACTOR_OTP_TTL_SECONDS", default=600)
+TWO_FACTOR_OTP_RESEND_SECONDS = env.int("TWO_FACTOR_OTP_RESEND_SECONDS", default=60)
+TWO_FACTOR_OTP_MAX_ATTEMPTS = env.int("TWO_FACTOR_OTP_MAX_ATTEMPTS", default=5)
 
 # Application / algorithm
 CALCULATION_ENGINE = "octave"

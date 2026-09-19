@@ -1,21 +1,17 @@
 from django.contrib.auth import authenticate
 from drf_spectacular.utils import extend_schema
+from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from apps.accounts.models import UserProfile
-from apps.accounts.serializers import UserSummarySerializer
+from apps.accounts.models import TwoFactorChallenge, UserProfile
+from apps.accounts.security import EmailDeliveryFailed, EmailSecurityUnavailable, create_two_factor_challenge
+from apps.accounts.serializers import LoginResponseSerializer, UserSummarySerializer
 
 
 class AdminTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """Issue JWTs only after staff status is verified.
-
-    SimpleJWT's default serializer creates the refresh token before custom
-    post-validation checks. Authenticating explicitly avoids recording an
-    outstanding refresh token for a valid non-staff user who is denied admin
-    access.
-    """
+    """Issue admin JWTs only after staff status and optional email OTP are verified."""
 
     def validate(self, attrs):
         authenticate_kwargs = {
@@ -30,16 +26,32 @@ class AdminTokenObtainPairSerializer(TokenObtainPairSerializer):
             raise AuthenticationFailed("Administrator access is required.")
 
         self.user = user
-        UserProfile.objects.get_or_create(user=user)
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        if profile.two_factor_enabled:
+            if not user.email:
+                raise serializers.ValidationError({"email": "Two-factor authentication requires an email address on this account."})
+            try:
+                challenge = create_two_factor_challenge(user, TwoFactorChallenge.Purpose.LOGIN_ADMIN)
+            except (EmailSecurityUnavailable, EmailDeliveryFailed) as exc:
+                raise serializers.ValidationError({"non_field_errors": [str(exc)]}) from exc
+            return {
+                "two_factor_required": True,
+                "challenge_id": challenge.challenge_id,
+                "expires_in": challenge.expires_in,
+                "resend_after": challenge.resend_after,
+                "masked_email": challenge.masked_email,
+            }
+
         refresh = self.get_token(user)
         return {
+            "two_factor_required": False,
             "refresh": str(refresh),
             "access": str(refresh.access_token),
             "user": UserSummarySerializer(user).data,
         }
 
 
-@extend_schema(tags=["Admin Authentication"])
+@extend_schema(tags=["Admin Authentication"], responses={200: LoginResponseSerializer})
 class AdminTokenObtainPairView(TokenObtainPairView):
     serializer_class = AdminTokenObtainPairSerializer
     throttle_scope = "auth"

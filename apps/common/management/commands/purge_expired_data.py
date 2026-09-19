@@ -4,6 +4,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
+from apps.accounts.models import TwoFactorChallenge
 from apps.calculations.models import Calculation, StoredCsvResult, StoredInputFile
 from apps.profiles.models import ProfileUpload
 
@@ -33,9 +34,15 @@ class Command(BaseCommand):
         orphan_input_count = orphan_input_qs.count()
         orphan_input_qs.delete()
 
+        security_cutoff = now - timedelta(days=1)
+        challenge_qs = TwoFactorChallenge.objects.filter(expires_at__lt=security_cutoff)
+        challenge_count = challenge_qs.count()
+        challenge_qs.delete()
+
         self.stdout.write(
             self.style.SUCCESS(
                 f"Purged {profile_count} expired profile records, {calculation_count} old calculation records, "
-                f"{orphan_input_count} unreferenced input files, and {orphan_csv_count} unreferenced CSV files."
+                f"{orphan_input_count} unreferenced input files, {orphan_csv_count} unreferenced CSV files, "
+                f"and {challenge_count} expired 2FA challenge records."
             )
         )

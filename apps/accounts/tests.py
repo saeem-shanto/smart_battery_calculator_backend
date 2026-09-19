@@ -165,3 +165,142 @@ class CalculationDeletionPrivacyTests(TestCase):
             second.delete()
         self.assertFalse(StoredCsvResult.objects.filter(pk=csv.pk).exists())
         self.assertFalse(StoredInputFile.objects.filter(pk=input_file.pk).exists())
+
+
+class EmailSecurityApiTests(TestCase):
+    def setUp(self):
+        from django.core import mail
+        self.client = APIClient()
+        self.mail = mail
+        self.mail.outbox = []
+        self.User = get_user_model()
+        self.password = "Strong-Test-Pass-482!"
+
+    def _create_2fa_user(self, username="twofactor", is_staff=False):
+        from apps.accounts.models import UserProfile
+        user = self.User.objects.create_user(
+            username=username,
+            email=f"{username}@example.com",
+            password=self.password,
+            is_staff=is_staff,
+        )
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.two_factor_enabled = True
+        profile.save(update_fields=["two_factor_enabled"])
+        return user
+
+    def test_two_factor_login_requires_otp_before_jwt(self):
+        import re
+
+        self._create_2fa_user()
+        response = self.client.post(
+            "/api/v1/accounts/auth/token/",
+            {"username": "twofactor", "password": self.password},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["two_factor_required"])
+        self.assertNotIn("access", response.data)
+        self.assertEqual(len(self.mail.outbox), 1)
+        code = re.search(r"\b(\d{6})\b", self.mail.outbox[0].body).group(1)
+
+        verify = self.client.post(
+            "/api/v1/accounts/auth/2fa/verify/",
+            {"challenge_id": response.data["challenge_id"], "code": code},
+            format="json",
+        )
+        self.assertEqual(verify.status_code, 200, verify.data)
+        self.assertTrue(verify.data["access"])
+        self.assertTrue(verify.data["refresh"])
+
+    def test_admin_two_factor_login_requires_otp(self):
+        import re
+
+        self._create_2fa_user(username="staff2fa", is_staff=True)
+        response = self.client.post(
+            "/api/v1/admin/auth/token/",
+            {"username": "staff2fa", "password": self.password},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["two_factor_required"])
+        code = re.search(r"\b(\d{6})\b", self.mail.outbox[-1].body).group(1)
+        verify = self.client.post(
+            "/api/v1/accounts/auth/2fa/verify/",
+            {"challenge_id": response.data["challenge_id"], "code": code},
+            format="json",
+        )
+        self.assertEqual(verify.status_code, 200, verify.data)
+        self.assertTrue(verify.data["user"]["is_staff"])
+
+    def test_user_can_enable_and_disable_two_factor(self):
+        import re
+
+        user = self.User.objects.create_user(username="toggle2fa", email="toggle@example.com", password=self.password)
+        token = self.client.post(
+            "/api/v1/accounts/auth/token/",
+            {"username": user.username, "password": self.password},
+            format="json",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.data['access']}")
+        start = self.client.post(
+            "/api/v1/accounts/me/two-factor/enable/",
+            {"current_password": self.password},
+            format="json",
+        )
+        self.assertEqual(start.status_code, 200, start.data)
+        code = re.search(r"\b(\d{6})\b", self.mail.outbox[-1].body).group(1)
+        verify = self.client.post(
+            "/api/v1/accounts/me/two-factor/enable/verify/",
+            {"challenge_id": start.data["challenge_id"], "code": code},
+            format="json",
+        )
+        self.assertEqual(verify.status_code, 200, verify.data)
+        self.assertTrue(verify.data["two_factor_enabled"])
+
+        disable = self.client.post(
+            "/api/v1/accounts/me/two-factor/disable/",
+            {"current_password": self.password},
+            format="json",
+        )
+        self.assertEqual(disable.status_code, 200, disable.data)
+        self.assertFalse(disable.data["two_factor_enabled"])
+
+    def test_password_reset_email_changes_password(self):
+        from urllib.parse import parse_qs, urlparse
+        import re
+
+        user = self.User.objects.create_user(username="resetme", email="reset@example.com", password=self.password)
+        request = self.client.post(
+            "/api/v1/accounts/auth/password-reset/",
+            {"email": user.email},
+            format="json",
+        )
+        self.assertEqual(request.status_code, 200, request.data)
+        self.assertEqual(len(self.mail.outbox), 1)
+        match = re.search(r"https?://\S+", self.mail.outbox[0].body)
+        self.assertIsNotNone(match)
+        query = parse_qs(urlparse(match.group(0)).query)
+        new_password = "Another-Strong-Pass-732!"
+        confirm = self.client.post(
+            "/api/v1/accounts/auth/password-reset/confirm/",
+            {
+                "uid": query["uid"][0],
+                "token": query["token"][0],
+                "new_password": new_password,
+                "confirm_password": new_password,
+            },
+            format="json",
+        )
+        self.assertEqual(confirm.status_code, 204, getattr(confirm, "data", None))
+        user.refresh_from_db()
+        self.assertTrue(user.check_password(new_password))
+
+    def test_password_reset_request_does_not_reveal_missing_email(self):
+        response = self.client.post(
+            "/api/v1/accounts/auth/password-reset/",
+            {"email": "missing@example.com"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(self.mail.outbox), 0)

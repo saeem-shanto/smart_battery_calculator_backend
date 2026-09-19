@@ -293,3 +293,43 @@ After migration, run the included Postman production checks before connecting th
 ## Privacy / retention mode
 
 `POST /api/v1/calculations/client-workbook/` accepts `retain_data`. When `true`, the unique input, canonical `Results_RPAtrail400.csv`, and calculation record are retained using the existing deduplicated audit model. When `false`, processing is transient: no `Calculation`, `StoredInputFile`, or `StoredCsvResult` rows are created. The response contains the result plus a base64-encoded transient CSV for immediate download. The transient validation endpoint `POST /api/v1/profiles/client-workbook/validate/` also never stores uploaded bytes or parsed values.
+
+## Email security: optional 2FA and forgot password (v1.5.8)
+
+The account system supports optional email-based two-factor authentication and password recovery.
+
+### Login 2FA
+
+- 2FA is **off by default** for every account.
+- A signed-in user or staff member can enable it from their profile.
+- Enabling 2FA requires the current password and a 6-digit code sent to the account email.
+- After it is enabled, every successful username/password login creates an email OTP challenge; JWT access/refresh tokens are issued only after the OTP is verified.
+- OTPs are single-use, expire after `TWO_FACTOR_OTP_TTL_SECONDS`, are limited by `TWO_FACTOR_OTP_MAX_ATTEMPTS`, and can only be resent after `TWO_FACTOR_OTP_RESEND_SECONDS`.
+- Users must disable 2FA before changing the account email, then re-enable it to verify the new address.
+
+### Forgot password
+
+`POST /api/v1/accounts/auth/password-reset/` accepts an email address and always returns a generic success message when the service is available, preventing account enumeration. The email contains a signed Django password-reset link pointing to `FRONTEND_URL/account/reset-password`. The confirm endpoint is `POST /api/v1/accounts/auth/password-reset/confirm/`.
+
+### Gmail SMTP production settings
+
+For Gmail SMTP, use a dedicated sender account and a Google **App Password**, not the normal Gmail password. Configure on Render:
+
+```env
+FRONTEND_URL=https://smartbatterycalculator.vercel.app
+ACCOUNT_EMAIL_ENABLED=True
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=True
+EMAIL_USE_SSL=False
+EMAIL_HOST_USER=your-sender@gmail.com
+EMAIL_HOST_PASSWORD=<GOOGLE_APP_PASSWORD>
+DEFAULT_FROM_EMAIL=Smart Battery Calculator <your-sender@gmail.com>
+EMAIL_TIMEOUT=15
+PASSWORD_RESET_TIMEOUT_SECONDS=3600
+TWO_FACTOR_OTP_TTL_SECONDS=600
+TWO_FACTOR_OTP_RESEND_SECONDS=60
+TWO_FACTOR_OTP_MAX_ATTEMPTS=5
+```
+
+In local development the console email backend can be used, so OTP and reset-link messages appear in the Django terminal instead of being sent externally.

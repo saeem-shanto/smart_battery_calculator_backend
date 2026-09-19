@@ -28,11 +28,42 @@ class UserProfile(models.Model):
         related_name="battery_profile",
     )
     avatar = models.ImageField(upload_to=user_avatar_upload_to, max_length=500, blank=True)
+    two_factor_enabled = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self) -> str:
         return f"Profile for {self.user.get_username()}"
+
+
+class TwoFactorChallenge(models.Model):
+    class Purpose(models.TextChoices):
+        LOGIN_USER = "login_user", "User login"
+        LOGIN_ADMIN = "login_admin", "Admin login"
+        ENABLE = "enable", "Enable two-factor authentication"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="two_factor_challenges",
+    )
+    purpose = models.CharField(max_length=32, choices=Purpose.choices)
+    code_digest = models.CharField(max_length=64, blank=True)
+    expires_at = models.DateTimeField()
+    last_sent_at = models.DateTimeField()
+    attempts = models.PositiveSmallIntegerField(default=0)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["user", "purpose", "consumed_at"], name="accounts_tw_user_id_322cc0_idx"),
+            models.Index(fields=["expires_at"], name="accounts_tw_expires_e094f8_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.purpose} challenge for {self.user_id}"
 
 
 def _delete_storage_name(field, name: str) -> None:

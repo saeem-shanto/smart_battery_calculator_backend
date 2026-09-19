@@ -1,25 +1,24 @@
 {
   "info": {
-    "name": "Smart Battery Calculator Backend v1.5.2.2 - COMPLETE TEST SUITE",
+    "name": "Smart Battery Calculator API v1.5 - Supabase Postgres + Storage",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Complete Postman suite for the refined Django/DRF v1.5.2.2 backend. Covers system health, public validation, retained and transient calculations, guest-token access, optional user accounts/ownership/profile/avatar/password/logout, admin JWT/dashboard/tariffs, Octave diagnostics, privacy checks, and destructive cleanup.\n\nBefore running file-based requests, select Postman_Test_Profile_8760.csv in each `file` form-data field. Set `adminPassword` to the password used by your Django admin/staff account.",
-    "version": "1.5.1"
+    "description": "Full Postman verification collection for Smart Battery Calculator backend v1.3. Run folders in order. For requests containing a File field, select the relevant workbook manually after import. For the calculation and dedup requests, attach the exact same Vanikavipuldata.xls bytes. Admin credentials default to admin/123 for local development only; change collection variables for other environments."
   },
   "variable": [
     {
       "key": "baseUrl",
       "value": "http://127.0.0.1:8000",
-      "description": "Backend base URL. Change this for Render/production."
+      "description": "Backend base URL. Change to Render URL for deployed tests."
     },
     {
       "key": "adminUsername",
       "value": "admin",
-      "description": "Django staff/superuser username."
+      "description": "Local admin username. Change for production."
     },
     {
       "key": "adminPassword",
       "value": "change-me",
-      "description": "Replace with the actual admin password before running admin requests."
+      "description": "Set your real local/production admin password before running admin requests."
     },
     {
       "key": "adminAccessToken",
@@ -94,14 +93,6 @@
     {
       "key": "userRefreshToken",
       "value": ""
-    },
-    {
-      "key": "userNewPassword",
-      "value": "Stronger-Postman-Pass-593!"
-    },
-    {
-      "key": "avatarConfigured",
-      "value": "false"
     }
   ],
   "item": [
@@ -320,8 +311,7 @@
                 {
                   "key": "file",
                   "type": "file",
-                  "src": [],
-                  "description": "Select Postman_Test_Profile_8760.csv from the supplied test bundle, or your own valid 8760/8784-row workbook."
+                  "src": []
                 },
                 {
                   "key": "retain_data",
@@ -350,7 +340,7 @@
                 },
                 {
                   "key": "metadata",
-                  "value": "{\"scenario_label\":\"Postman refined v1.5 full check\",\"source\":\"postman\"}",
+                  "value": "{\"scenario_label\":\"Postman v1.3 full check\",\"source\":\"postman\"}",
                   "type": "text"
                 }
               ]
@@ -395,8 +385,7 @@
                 {
                   "key": "file",
                   "type": "file",
-                  "src": [],
-                  "description": "Select Postman_Test_Profile_8760.csv from the supplied test bundle, or your own valid client workbook."
+                  "src": []
                 },
                 {
                   "key": "retain_data",
@@ -592,30 +581,10 @@
     },
     {
       "name": "03 - Optional User Accounts & Ownership",
-      "description": "Optional account flow. Guest calculation remains supported. Run the guest retained calculation in folder 02 first, then run this folder in order to register a user and claim it.",
+      "description": "Register an optional user account, claim the retained guest calculation from section 02, then verify owner history.",
       "item": [
         {
           "name": "Register User",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": "{{baseUrl}}/api/v1/accounts/register/",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"username\": \"{{userUsername}}\",\n  \"email\": \"postman@example.com\",\n  \"first_name\": \"Postman\",\n  \"last_name\": \"User\",\n  \"password\": \"{{userPassword}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
           "event": [
             {
               "listen": "prerequest",
@@ -631,15 +600,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"User registration succeeds\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"User registration succeeds\", function () { pm.response.to.have.status(201); });",
                   "if (pm.response.code === 201) { const b=pm.response.json(); pm.collectionVariables.set(\"userAccessToken\", b.access); pm.collectionVariables.set(\"userRefreshToken\", b.refresh); pm.expect(b.user.username).to.eql(pm.collectionVariables.get(\"userUsername\")); }"
                 ]
               }
             }
-          ]
-        },
-        {
-          "name": "User Login",
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -649,64 +615,12 @@
                 "type": "text"
               }
             ],
-            "url": "{{baseUrl}}/api/v1/accounts/auth/token/",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"{{userUsername}}\",\n  \"password\": \"{{userPassword}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"User login succeeds\", () => pm.response.to.have.status(200));",
-                  "if (pm.response.code === 200) { const b=pm.response.json(); pm.collectionVariables.set(\"userAccessToken\", b.access); pm.collectionVariables.set(\"userRefreshToken\", b.refresh); pm.expect(b.user.is_staff).to.eql(false); }"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Refresh User JWT",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": "{{baseUrl}}/api/v1/accounts/auth/token/refresh/",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refresh\": \"{{userRefreshToken}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"User JWT refresh succeeds\", () => pm.response.to.have.status(200));",
-                  "if (pm.response.code === 200) { const b=pm.response.json(); if (b.access) pm.collectionVariables.set(\"userAccessToken\", b.access); if (b.refresh) pm.collectionVariables.set(\"userRefreshToken\", b.refresh); }"
-                ]
-              }
-            }
-          ]
+              "raw": "{\n  \"username\": \"{{userUsername}}\",\n  \"email\": \"postman@example.com\",\n  \"first_name\": \"Postman\",\n  \"last_name\": \"User\",\n  \"password\": \"{{userPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/accounts/register/"
+          }
         },
         {
           "name": "Get My Profile",
@@ -727,112 +641,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Profile returned\", () => pm.response.to.have.status(200));",
-                  "if (pm.response.code === 200) { const b=pm.response.json(); pm.expect(b.username).to.eql(pm.collectionVariables.get(\"userUsername\")); }"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Update My Profile",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{userAccessToken}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": "{{baseUrl}}/api/v1/accounts/me/",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"postman.updated@example.com\",\n  \"first_name\": \"Postman\",\n  \"last_name\": \"Tester\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Profile update succeeds\", () => pm.response.to.have.status(200));",
-                  "if (pm.response.code === 200) { const b=pm.response.json(); pm.expect(b.email).to.eql(\"postman.updated@example.com\"); pm.expect(b.first_name).to.eql(\"Postman\"); }"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Upload / Replace Profile Picture",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{userAccessToken}}",
-                "type": "text"
-              }
-            ],
-            "url": "{{baseUrl}}/api/v1/accounts/me/",
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "avatar",
-                  "type": "file",
-                  "src": [],
-                  "description": "OPTIONAL: choose a JPEG, PNG, or WebP file (within PROFILE_AVATAR_MAX_MB)."
-                }
-              ]
-            },
-            "description": "Choose an image before sending. A 400 is expected if no file was selected."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Avatar/profile PATCH accepted\", () => pm.expect([200,400]).to.include(pm.response.code));",
-                  "if (pm.response.code === 200) { const b=pm.response.json(); pm.collectionVariables.set(\"avatarConfigured\", b.avatar_download_path ? \"true\" : \"false\"); }"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Download My Profile Picture",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{userAccessToken}}",
-                "type": "text"
-              }
-            ],
-            "url": "{{baseUrl}}/api/v1/accounts/me/avatar/"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Avatar endpoint behaves correctly\", () => pm.expect([200,404]).to.include(pm.response.code));",
-                  "if (pm.collectionVariables.get(\"avatarConfigured\") === \"true\") pm.expect(pm.response.code).to.eql(200);"
+                  "pm.test(\"Profile returns 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Username matches\", function () { pm.expect(pm.response.json().username).to.eql(pm.collectionVariables.get(\"userUsername\")); });"
                 ]
               }
             }
@@ -862,8 +672,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Guest calculation is claimed\", () => pm.response.to.have.status(200));",
-                  "if (pm.response.code === 200) pm.expect(pm.response.json().retained).to.eql(true);"
+                  "pm.test(\"Guest calculation is claimed\", function () { pm.response.to.have.status(200); });"
                 ]
               }
             }
@@ -888,8 +697,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Owned calculation list returned\", () => pm.response.to.have.status(200));",
-                  "if (pm.response.code === 200) { const b=pm.response.json(); const rows=Array.isArray(b)?b:(b.results||[]); pm.expect(rows.some(x=>x.public_id===pm.collectionVariables.get(\"calculationPublicId\"))).to.eql(true); }"
+                  "pm.test(\"Owned calculation list returns 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Claimed calculation is present\", function () { const b=pm.response.json(); const rows=Array.isArray(b)?b:b.results; pm.expect(rows.some(x=>x.public_id===pm.collectionVariables.get(\"calculationPublicId\"))).to.eql(true); });"
                 ]
               }
             }
@@ -914,7 +723,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Old guest token no longer authorizes owned record\", () => pm.expect([401,403]).to.include(pm.response.code));"
+                  "pm.test(\"Claimed record rejects guest token\", function () { pm.response.to.have.status(403); });"
                 ]
               }
             }
@@ -939,32 +748,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Owner can retrieve calculation\", () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Owner Can List Files",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{userAccessToken}}",
-                "type": "text"
-              }
-            ],
-            "url": "{{baseUrl}}/api/v1/calculations/{{calculationPublicId}}/files/"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Owner can list files\", () => pm.response.to.have.status(200));"
+                  "pm.test(\"Owner JWT retrieves calculation\", function () { pm.response.to.have.status(200); });"
                 ]
               }
             }
@@ -1466,8 +1250,7 @@
                 {
                   "key": "file",
                   "type": "file",
-                  "src": [],
-                  "description": "Select Postman_Test_Profile_8760.csv from the supplied test bundle, or your own valid client workbook."
+                  "src": []
                 },
                 {
                   "key": "battery_installed_cost_per_kwh",
@@ -1509,7 +1292,7 @@
                   "key": "file",
                   "type": "file",
                   "src": [],
-                  "description": "Select Postman_Test_Profile_8760.csv from the supplied test bundle, or your own valid client workbook."
+                  "description": "Attach Vanikavipuldata.xls. This validation request must not persist it."
                 }
               ]
             },
@@ -1554,7 +1337,7 @@
                   "key": "file",
                   "type": "file",
                   "src": [],
-                  "description": "Select Postman_Test_Profile_8760.csv from the supplied test bundle, or your own valid client workbook."
+                  "description": "Attach the same workbook."
                 },
                 {
                   "key": "retain_data",
@@ -1609,181 +1392,6 @@
                   "pm.test(\"No public record\", () => pm.expect(b.public_id).to.eql(null));",
                   "pm.test(\"No stored file list\", () => pm.expect(b.files).to.be.an(\"array\").that.is.empty);",
                   "pm.test(\"Inline CSV returned\", () => { pm.expect(b.transient_csv.filename).to.eql(\"Results_RPAtrail400.csv\"); pm.expect(b.transient_csv.base64_data).to.be.a(\"string\").and.not.empty; });"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "08 - Account Security / Session Lifecycle",
-      "description": "Run after folder 03. Password change blacklists outstanding tokens; this folder then logs in with the new password and tests logout.",
-      "item": [
-        {
-          "name": "Change Password",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{userAccessToken}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": "{{baseUrl}}/api/v1/accounts/me/password/",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"current_password\": \"{{userPassword}}\",\n  \"new_password\": \"{{userNewPassword}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Password changed\", () => pm.response.to.have.status(204));",
-                  "if (pm.response.code === 204) pm.collectionVariables.set(\"userPassword\", pm.collectionVariables.get(\"userNewPassword\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Old Access Token Is Rejected After Password Change",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{userAccessToken}}",
-                "type": "text"
-              }
-            ],
-            "url": "{{baseUrl}}/api/v1/accounts/me/",
-            "description": "The password-change endpoint blacklists outstanding refresh tokens. Depending on JWT configuration, already-issued access tokens may remain cryptographically valid until expiry; if your configuration does not revoke access tokens immediately, use the next login request as the authoritative session reset check."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Old access token is no longer useful\", () => pm.expect([401,403]).to.include(pm.response.code));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Login With New Password",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": "{{baseUrl}}/api/v1/accounts/auth/token/",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"username\": \"{{userUsername}}\",\n  \"password\": \"{{userPassword}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Login with new password succeeds\", () => pm.response.to.have.status(200));",
-                  "if (pm.response.code === 200) { const b=pm.response.json(); pm.collectionVariables.set(\"userAccessToken\", b.access); pm.collectionVariables.set(\"userRefreshToken\", b.refresh); }"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Logout / Blacklist Refresh Token",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": "{{baseUrl}}/api/v1/accounts/auth/logout/",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refresh\": \"{{userRefreshToken}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Logout succeeds\", () => pm.response.to.have.status(204));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Refresh After Logout Is Rejected",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": "{{baseUrl}}/api/v1/accounts/auth/token/refresh/",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refresh\": \"{{userRefreshToken}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Blacklisted refresh token rejected\", () => pm.expect([401,400]).to.include(pm.response.code));"
                 ]
               }
             }

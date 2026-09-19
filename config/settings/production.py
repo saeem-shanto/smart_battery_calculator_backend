@@ -61,3 +61,13 @@ DATABASES["default"].setdefault("OPTIONS", {})  # noqa: F405
 DATABASES["default"]["OPTIONS"].setdefault("sslmode", "require")  # noqa: F405
 DATABASES["default"]["OPTIONS"].setdefault("connect_timeout", DATABASE_CONNECT_TIMEOUT)  # noqa: F405
 DATABASES["default"]["OPTIONS"].setdefault("application_name", "smart-battery-api")  # noqa: F405
+
+
+# If email security features are enabled in production, SMTP credentials are mandatory.
+if ACCOUNT_EMAIL_ENABLED:  # noqa: F405
+    if not EMAIL_HOST_USER or not EMAIL_HOST_PASSWORD:  # noqa: F405
+        raise ImproperlyConfigured(
+            "EMAIL_HOST_USER and EMAIL_HOST_PASSWORD must be set when ACCOUNT_EMAIL_ENABLED=True."
+        )
+    if not FRONTEND_URL.startswith("https://"):  # noqa: F405
+        raise ImproperlyConfigured("FRONTEND_URL must use HTTPS in production when account email security is enabled.")

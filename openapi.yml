@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Smart Solar Battery Calculator API
-  version: 1.5.1
+  version: 1.5.8
   description: Production API for Project N01. The original client MATLAB files are
     executed unchanged under GNU Octave. Retained input files and canonical CSV result
     artifacts are persisted in Supabase Storage; record metadata is persisted in PostgreSQL.
@@ -24,6 +24,84 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiRootResponse'
           description: ''
+  /api/v1/accounts/auth/2fa/resend/:
+    post:
+      operationId: accounts_auth_2fa_resend_create
+      tags:
+      - User Accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TwoFactorResendRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TwoFactorResendRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TwoFactorResendRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TwoFactorRequired'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/accounts/auth/2fa/verify/:
+    post:
+      operationId: accounts_auth_2fa_verify_create
+      tags:
+      - User Accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TwoFactorVerifyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TwoFactorVerifyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TwoFactorVerifyRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
   /api/v1/accounts/auth/logout/:
     post:
       operationId: accounts_auth_logout_create
@@ -40,6 +118,64 @@ paths:
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/LogoutRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '204':
+          description: No response body
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/accounts/auth/password-reset/:
+    post:
+      operationId: accounts_auth_password_reset_create
+      tags:
+      - User Accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequestRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: Generic reset-email response.
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/accounts/auth/password-reset/confirm/:
+    post:
+      operationId: accounts_auth_password_reset_confirm_create
+      tags:
+      - User Accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirmRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirmRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirmRequest'
         required: true
       security:
       - jwtAuth: []
@@ -75,7 +211,11 @@ paths:
         required: true
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+          description: ''
   /api/v1/accounts/auth/token/refresh/:
     post:
       operationId: accounts_auth_token_refresh_create
@@ -224,6 +364,122 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
           description: ''
+  /api/v1/accounts/me/two-factor/:
+    get:
+      operationId: accounts_me_two_factor_retrieve
+      tags:
+      - User Accounts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TwoFactorStatus'
+          description: ''
+  /api/v1/accounts/me/two-factor/disable/:
+    post:
+      operationId: accounts_me_two_factor_disable_create
+      tags:
+      - User Accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TwoFactorDisableRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TwoFactorDisableRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TwoFactorDisableRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummary'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/accounts/me/two-factor/enable/:
+    post:
+      operationId: accounts_me_two_factor_enable_create
+      tags:
+      - User Accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TwoFactorEnableStartRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TwoFactorEnableStartRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TwoFactorEnableStartRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TwoFactorRequired'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/accounts/me/two-factor/enable/verify/:
+    post:
+      operationId: accounts_me_two_factor_enable_verify_create
+      tags:
+      - User Accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TwoFactorEnableVerifyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TwoFactorEnableVerifyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TwoFactorEnableVerifyRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummary'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
   /api/v1/accounts/register/:
     post:
       operationId: accounts_register_create
@@ -279,7 +535,11 @@ paths:
         required: true
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+          description: ''
   /api/v1/admin/auth/token/refresh/:
     post:
       operationId: admin_auth_token_refresh_create
@@ -1737,13 +1997,8 @@ components:
       - name
     AdminTokenObtainPairRequest:
       type: object
-      description: |-
-        Issue JWTs only after staff status is verified.
-
-        SimpleJWT's default serializer creates the refresh token before custom
-        post-validation checks. Authenticating explicitly avoids recording an
-        outstanding refresh token for a valid non-staff user who is denied admin
-        access.
+      description: Issue admin JWTs only after staff status and optional email OTP
+        are verified.
       properties:
         username:
           type: string
@@ -2280,6 +2535,26 @@ components:
       description: |-
         * `flat` - Flat
         * `tou` - Time of use
+    LoginResponse:
+      type: object
+      properties:
+        two_factor_required:
+          type: boolean
+        challenge_id:
+          type: string
+          format: uuid
+        expires_in:
+          type: integer
+        resend_after:
+          type: integer
+        masked_email:
+          type: string
+        access:
+          type: string
+        refresh:
+          type: string
+        user:
+          $ref: '#/components/schemas/UserSummary'
     LogoutRequest:
       type: object
       properties:
@@ -2564,6 +2839,40 @@ components:
       required:
       - current_password
       - new_password
+    PasswordResetConfirmRequest:
+      type: object
+      properties:
+        uid:
+          type: string
+          minLength: 1
+        token:
+          type: string
+          minLength: 1
+        new_password:
+          type: string
+          writeOnly: true
+          minLength: 8
+          maxLength: 128
+        confirm_password:
+          type: string
+          writeOnly: true
+          minLength: 8
+          maxLength: 128
+      required:
+      - confirm_password
+      - new_password
+      - token
+      - uid
+    PasswordResetRequestRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+          maxLength: 254
+      required:
+      - email
     PatchedAdminCalculationRequest:
       type: object
       properties:
@@ -2958,6 +3267,98 @@ components:
       - filename
       - sha256
       - size_bytes
+    TwoFactorDisableRequest:
+      type: object
+      properties:
+        current_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - current_password
+    TwoFactorEnableStartRequest:
+      type: object
+      properties:
+        current_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - current_password
+    TwoFactorEnableVerifyRequest:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          minLength: 1
+          pattern: ^\d{6}$
+      required:
+      - challenge_id
+      - code
+    TwoFactorRequired:
+      type: object
+      properties:
+        two_factor_required:
+          type: boolean
+          default: true
+        challenge_id:
+          type: string
+          format: uuid
+        expires_in:
+          type: integer
+        resend_after:
+          type: integer
+        masked_email:
+          type: string
+      required:
+      - challenge_id
+      - expires_in
+      - masked_email
+      - resend_after
+    TwoFactorResendRequest:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+      required:
+      - challenge_id
+    TwoFactorStatus:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        email:
+          oneOf:
+          - type: string
+            format: email
+          - type: string
+            maxLength: 0
+        masked_email:
+          type: string
+        email_configured:
+          type: boolean
+      required:
+      - email
+      - email_configured
+      - enabled
+      - masked_email
+    TwoFactorVerifyRequest:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          minLength: 1
+          pattern: ^\d{6}$
+      required:
+      - challenge_id
+      - code
     UserSummary:
       type: object
       properties:
@@ -2992,6 +3393,9 @@ components:
           type: string
           nullable: true
           readOnly: true
+        two_factor_enabled:
+          type: boolean
+          readOnly: true
       required:
       - avatar_download_path
       - email
@@ -3000,6 +3404,7 @@ components:
       - is_staff
       - last_name
       - name
+      - two_factor_enabled
       - username
     UserTokenObtainPairRequest:
       type: object

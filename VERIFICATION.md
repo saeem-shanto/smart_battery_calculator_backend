@@ -1,4 +1,4 @@
-# Verification — refined backend v1.5.2
+# Verification — refined backend v1.5.8
 
 ## Static checks completed in this build environment
 

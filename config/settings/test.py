@@ -44,3 +44,14 @@ REQUIRE_FULL_YEAR_PROFILE = False
 
 # Speed up account/authentication tests without changing production hashing.
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+# Keep email-security tests local and deterministic.
+ACCOUNT_EMAIL_ENABLED = True
+EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+EMAIL_HOST_USER = "test-sender@gmail.com"
+EMAIL_HOST_PASSWORD = "test-app-password"
+DEFAULT_FROM_EMAIL = "Smart Battery Calculator <test-sender@gmail.com>"
+FRONTEND_URL = "http://localhost:3000"
+TWO_FACTOR_OTP_TTL_SECONDS = 600
+TWO_FACTOR_OTP_RESEND_SECONDS = 0
+TWO_FACTOR_OTP_MAX_ATTEMPTS = 5
+PASSWORD_RESET_TIMEOUT = 3600
