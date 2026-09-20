@@ -38,14 +38,18 @@ services:
       - key: ACCOUNT_EMAIL_ENABLED
         value: "True"
       - key: EMAIL_BACKEND
-        value: anymail.backends.resend.EmailBackend
-      - key: RESEND_API_KEY
+        value: apps.common.email_backends.BrevoApiEmailBackend
+      - key: BREVO_API_KEY
         sync: false
-      - key: DEFAULT_FROM_EMAIL
+      - key: BREVO_SENDER_EMAIL
         sync: false
-      - key: EMAIL_API_CONNECT_TIMEOUT
+      - key: BREVO_SENDER_NAME
+        value: Smart Battery Calculator
+      - key: BREVO_REPLY_TO_EMAIL
+        value: ""
+      - key: BREVO_API_CONNECT_TIMEOUT
         value: "5"
-      - key: EMAIL_API_READ_TIMEOUT
+      - key: BREVO_API_READ_TIMEOUT
         value: "15"
       - key: PASSWORD_RESET_TIMEOUT_SECONDS
         value: "3600"

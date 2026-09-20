@@ -2,7 +2,10 @@ from django.conf import settings
 from django.core.mail import send_mail
 from django.core.management.base import BaseCommand, CommandError
 
-from apps.accounts.security import email_security_available
+from apps.accounts.security import email_delivery_error_summary, email_security_available
+
+
+BREVO_BACKEND = "apps.common.email_backends.BrevoApiEmailBackend"
 
 
 class Command(BaseCommand):
@@ -25,11 +28,20 @@ class Command(BaseCommand):
         self.stdout.write(f"Default sender: {settings.DEFAULT_FROM_EMAIL}")
         self.stdout.write(f"Frontend URL: {settings.FRONTEND_URL}")
 
-        if backend == "anymail.backends.resend.EmailBackend":
-            anymail = getattr(settings, "ANYMAIL", {}) or {}
-            self.stdout.write(f"Resend API key configured: {bool(anymail.get('RESEND_API_KEY'))}")
+        if backend == BREVO_BACKEND:
             self.stdout.write(
-                f"Anymail request timeout: {anymail.get('REQUESTS_TIMEOUT', 'default')}"
+                f"Brevo API key configured: {bool(getattr(settings, 'BREVO_API_KEY', ''))}"
+            )
+            self.stdout.write(
+                f"Brevo sender configured: {bool(getattr(settings, 'BREVO_SENDER_EMAIL', ''))}"
+            )
+            self.stdout.write(
+                f"Brevo sender email: {getattr(settings, 'BREVO_SENDER_EMAIL', '') or '(missing)'}"
+            )
+            self.stdout.write(
+                "Brevo API timeout: "
+                f"({getattr(settings, 'BREVO_API_CONNECT_TIMEOUT', 5)}, "
+                f"{getattr(settings, 'BREVO_API_READ_TIMEOUT', 15)})"
             )
         elif backend == "django.core.mail.backends.smtp.EmailBackend":
             self.stdout.write(f"SMTP host configured: {bool(getattr(settings, 'EMAIL_HOST', ''))}")
@@ -48,13 +60,13 @@ class Command(BaseCommand):
             try:
                 sent = send_mail(
                     "Smart Battery Calculator email test",
-                    "Email-based security is configured correctly.",
+                    "Email-based security is configured correctly through the Brevo API.",
                     settings.DEFAULT_FROM_EMAIL,
                     [recipient],
                 )
             except Exception as exc:
                 raise CommandError(
-                    f"Provider test failed: {type(exc).__name__}. Check the application logs/provider dashboard."
+                    f"Provider test failed: {email_delivery_error_summary(exc)}"
                 ) from exc
             if sent != 1:
                 raise CommandError("The email provider did not accept the test message.")

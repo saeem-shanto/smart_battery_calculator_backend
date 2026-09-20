@@ -11,20 +11,20 @@ from apps.accounts.security import email_security_available
 class EmailBackendConfigurationTests(SimpleTestCase):
     @override_settings(
         ACCOUNT_EMAIL_ENABLED=True,
-        EMAIL_BACKEND="anymail.backends.resend.EmailBackend",
-        ANYMAIL={"RESEND_API_KEY": "re_test_key"},
-        RESEND_API_KEY="re_test_key",
+        EMAIL_BACKEND="apps.common.email_backends.BrevoApiEmailBackend",
+        BREVO_API_KEY="test-api-key",
+        BREVO_SENDER_EMAIL="verified@example.com",
     )
-    def test_resend_backend_is_available_with_api_key(self):
+    def test_brevo_api_backend_is_available_with_api_key_and_sender(self):
         self.assertTrue(email_security_available())
 
     @override_settings(
         ACCOUNT_EMAIL_ENABLED=True,
-        EMAIL_BACKEND="anymail.backends.resend.EmailBackend",
-        ANYMAIL={"RESEND_API_KEY": ""},
-        RESEND_API_KEY="",
+        EMAIL_BACKEND="apps.common.email_backends.BrevoApiEmailBackend",
+        BREVO_API_KEY="",
+        BREVO_SENDER_EMAIL="verified@example.com",
     )
-    def test_resend_backend_is_unavailable_without_api_key(self):
+    def test_brevo_api_backend_is_unavailable_without_api_key(self):
         self.assertFalse(email_security_available())
 
     @override_settings(
@@ -251,15 +251,15 @@ class EmailSecurityApiTests(TestCase):
         self.assertTrue(verify.data["refresh"])
 
     @override_settings(
-        EMAIL_BACKEND="anymail.backends.resend.EmailBackend",
-        ANYMAIL={"RESEND_API_KEY": ""},
-        RESEND_API_KEY="",
+        EMAIL_BACKEND="apps.common.email_backends.BrevoApiEmailBackend",
+        BREVO_API_KEY="",
+        BREVO_SENDER_EMAIL="verified@example.com",
     )
     def test_two_factor_login_reports_email_provider_unavailable_as_503(self):
-        self._create_2fa_user(username="resenddown")
+        self._create_2fa_user(username="brevodown")
         response = self.client.post(
             "/api/v1/accounts/auth/token/",
-            {"username": "resenddown", "password": self.password},
+            {"username": "brevodown", "password": self.password},
             format="json",
         )
         self.assertEqual(response.status_code, 503, response.data)

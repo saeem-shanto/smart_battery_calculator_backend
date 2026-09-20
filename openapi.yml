@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Smart Solar Battery Calculator API
-  version: 1.5.9
+  version: 1.8.0
   description: Production API for Project N01. The original client MATLAB files are
     executed unchanged under GNU Octave. Retained input files and canonical CSV result
     artifacts are persisted in Supabase Storage; record metadata is persisted in PostgreSQL.

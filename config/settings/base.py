@@ -42,7 +42,6 @@ INSTALLED_APPS = [
     "apps.feedback",
     "apps.dashboard",
     "apps.octave",
-    "anymail",
 ]
 
 MIDDLEWARE = [
@@ -210,7 +209,7 @@ SPECTACULAR_SETTINGS = {
         "Retained input files and canonical CSV result artifacts are persisted in Supabase Storage; record metadata is persisted in PostgreSQL. "
         "Account email verification is optional; password reset requires an email address associated with an active account."
     ),
-    "VERSION": "1.5.9",
+    "VERSION": "1.8.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
     "SCHEMA_PATH_PREFIX": r"/api/v1",
@@ -269,10 +268,8 @@ SPECTACULAR_SETTINGS = {
 
 # Email-based account security (2FA + password reset)
 #
-# Development defaults to Django's console backend so a missing external email
-# credential never prevents the project from starting. Production overrides the
-# default to Anymail's Resend HTTPS API backend (port 443), avoiding Render's
-# Free-plan SMTP port restrictions.
+# Development defaults to Django's console backend. Production uses Brevo's
+# transactional email REST API over HTTPS, so Render Free never needs SMTP.
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000").rstrip("/")
 ACCOUNT_EMAIL_ENABLED = env.bool("ACCOUNT_EMAIL_ENABLED", default=False)
 EMAIL_BACKEND = env(
@@ -280,8 +277,7 @@ EMAIL_BACKEND = env(
     default="django.core.mail.backends.console.EmailBackend",
 ).strip()
 
-# Optional SMTP compatibility for local/self-hosted environments. These values
-# are not required by Resend's HTTP API backend.
+# Optional SMTP compatibility for local/self-hosted environments only.
 EMAIL_HOST = env("EMAIL_HOST", default="").strip()
 EMAIL_PORT = env.int("EMAIL_PORT", default=587)
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
@@ -290,22 +286,35 @@ EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="").strip()
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="").strip()
 EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=15)
 
-RESEND_API_KEY = env("RESEND_API_KEY", default="").strip()
-EMAIL_API_CONNECT_TIMEOUT = env.float("EMAIL_API_CONNECT_TIMEOUT", default=5.0)
-EMAIL_API_READ_TIMEOUT = env.float("EMAIL_API_READ_TIMEOUT", default=15.0)
-
-ANYMAIL = {
-    "RESEND_API_KEY": RESEND_API_KEY,
-    # Anymail accepts a requests-style (connect, read) timeout tuple. This keeps
-    # a third-party email outage from occupying the single Render worker for an
-    # unbounded period.
-    "REQUESTS_TIMEOUT": (EMAIL_API_CONNECT_TIMEOUT, EMAIL_API_READ_TIMEOUT),
-}
-
-DEFAULT_FROM_EMAIL = env(
-    "DEFAULT_FROM_EMAIL",
-    default="Smart Battery Calculator <onboarding@resend.dev>",
+# Brevo transactional-email API settings. API keys and sender identity are kept
+# in environment secrets and never committed to source control.
+BREVO_API_KEY = env("BREVO_API_KEY", default="").strip()
+BREVO_SENDER_EMAIL = env("BREVO_SENDER_EMAIL", default="").strip()
+BREVO_SENDER_NAME = env(
+    "BREVO_SENDER_NAME", default="Smart Battery Calculator"
 ).strip()
+BREVO_REPLY_TO_EMAIL = env("BREVO_REPLY_TO_EMAIL", default="").strip()
+BREVO_API_SEND_URL = env(
+    "BREVO_API_SEND_URL", default="https://api.brevo.com/v3/smtp/email"
+).strip()
+BREVO_API_CONNECT_TIMEOUT = env.float("BREVO_API_CONNECT_TIMEOUT", default=5.0)
+BREVO_API_READ_TIMEOUT = env.float("BREVO_API_READ_TIMEOUT", default=15.0)
+
+_default_sender = (
+    f"{BREVO_SENDER_NAME} <{BREVO_SENDER_EMAIL}>"
+    if BREVO_SENDER_EMAIL
+    else "Smart Battery Calculator <local@example.com>"
+)
+
+# Brevo has one verified sender identity. When its API backend is selected, use
+# that identity directly rather than requiring a duplicate DEFAULT_FROM_EMAIL
+# variable that can become stale after changing providers. Other backends retain
+# the normal Django DEFAULT_FROM_EMAIL override.
+if EMAIL_BACKEND == "apps.common.email_backends.BrevoApiEmailBackend" and BREVO_SENDER_EMAIL:
+    DEFAULT_FROM_EMAIL = _default_sender
+else:
+    DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default=_default_sender).strip()
+
 PASSWORD_RESET_TIMEOUT = env.int("PASSWORD_RESET_TIMEOUT_SECONDS", default=3600)
 TWO_FACTOR_OTP_TTL_SECONDS = env.int("TWO_FACTOR_OTP_TTL_SECONDS", default=600)
 TWO_FACTOR_OTP_RESEND_SECONDS = env.int("TWO_FACTOR_OTP_RESEND_SECONDS", default=60)

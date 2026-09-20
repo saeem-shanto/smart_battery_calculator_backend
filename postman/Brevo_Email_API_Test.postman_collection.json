@@ -1,0 +1,73 @@
+{
+  "info": {
+    "name": "Brevo Email API - Smart Battery Calculator",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Minimal Brevo HTTPS API checks for the Smart Battery Calculator. Set brevoApiKey, senderEmail and recipientEmail in Postman. No real secrets are included."
+  },
+  "variable": [
+    {"key": "brevoBaseUrl", "value": "https://api.brevo.com/v3"},
+    {"key": "brevoApiKey", "value": "", "type": "secret"},
+    {"key": "senderEmail", "value": ""},
+    {"key": "recipientEmail", "value": ""}
+  ],
+  "item": [
+    {
+      "name": "01 - Check API Key / Account",
+      "request": {
+        "method": "GET",
+        "header": [
+          {"key": "accept", "value": "application/json"},
+          {"key": "api-key", "value": "{{brevoApiKey}}", "type": "text"}
+        ],
+        "url": "{{brevoBaseUrl}}/account"
+      },
+      "event": [{
+        "listen": "test",
+        "script": {"type": "text/javascript", "exec": [
+          "pm.test('Brevo API key accepted', function () { pm.response.to.have.status(200); });"
+        ]}
+      }]
+    },
+    {
+      "name": "02 - List Senders",
+      "request": {
+        "method": "GET",
+        "header": [
+          {"key": "accept", "value": "application/json"},
+          {"key": "api-key", "value": "{{brevoApiKey}}", "type": "text"}
+        ],
+        "url": "{{brevoBaseUrl}}/senders"
+      },
+      "event": [{
+        "listen": "test",
+        "script": {"type": "text/javascript", "exec": [
+          "pm.test('Senders loaded', function () { pm.response.to.have.status(200); });",
+          "pm.test('Configured sender is active', function () { const b=pm.response.json(); const target=(pm.collectionVariables.get('senderEmail')||'').toLowerCase(); const sender=(b.senders||[]).find(s => (s.email||'').toLowerCase()===target); pm.expect(sender, 'sender must exist').to.exist; pm.expect(sender.active, 'sender must be active/verified').to.eql(true); });"
+        ]}
+      }]
+    },
+    {
+      "name": "03 - Send Transactional Test Email",
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "accept", "value": "application/json"},
+          {"key": "api-key", "value": "{{brevoApiKey}}", "type": "text"},
+          {"key": "content-type", "value": "application/json"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sender\": {\n    \"name\": \"Smart Battery Calculator\",\n    \"email\": \"{{senderEmail}}\"\n  },\n  \"to\": [\n    {\n      \"email\": \"{{recipientEmail}}\"\n    }\n  ],\n  \"subject\": \"Smart Battery Calculator - Brevo API Test\",\n  \"textContent\": \"Brevo HTTPS API is configured correctly.\"\n}"
+        },
+        "url": "{{brevoBaseUrl}}/smtp/email"
+      },
+      "event": [{
+        "listen": "test",
+        "script": {"type": "text/javascript", "exec": [
+          "pm.test('Email accepted by Brevo', function () { pm.response.to.have.status(201); });",
+          "pm.test('Message ID returned', function () { pm.expect(pm.response.json().messageId).to.be.a('string').and.not.empty; });"
+        ]}
+      }]
+    }
+  ]
+}

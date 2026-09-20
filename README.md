@@ -27,7 +27,7 @@ Django creates a temporary compatibility copy named `Vanikavipuldata.xls` only d
 - GNU Octave (`octave-cli`)
 - original client MATLAB source executed unchanged
 - Gunicorn + WhiteNoise
-- Resend transactional email through Django Anymail over HTTPS (no SMTP dependency on Render)
+- Brevo transactional email API over HTTPS (no SMTP dependency on Render)
 - optional JWT user accounts with name/email/unique username/profile picture
 - JWT for staff/admin APIs (same Django user model; staff flag controls admin access)
 - guest `X-Calculation-Token` for retained calculations created without an account
@@ -297,7 +297,7 @@ After migration, run the included Postman production checks before connecting th
 
 `POST /api/v1/calculations/client-workbook/` accepts `retain_data`. When `true`, the unique input, canonical `Results_RPAtrail400.csv`, and calculation record are retained using the existing deduplicated audit model. When `false`, processing is transient: no `Calculation`, `StoredInputFile`, or `StoredCsvResult` rows are created. The response contains the result plus a base64-encoded transient CSV for immediate download. The transient validation endpoint `POST /api/v1/profiles/client-workbook/validate/` also never stores uploaded bytes or parsed values.
 
-## Email security: optional 2FA, email verification, and password recovery (v1.6.0)
+## Email security: optional 2FA, email verification, and password recovery (v1.8.1)
 
 The account system keeps email verification optional while separating it cleanly from login 2FA and password recovery.
 
@@ -305,63 +305,92 @@ The account system keeps email verification optional while separating it cleanly
 
 - Registration does **not** require email verification.
 - Normal username/password login does **not** require a verified email.
-- `GET /api/v1/accounts/me/` now exposes `email_verified` and `email_verified_at`.
-- A signed-in user can verify the current account email later through:
+- `GET /api/v1/accounts/me/` exposes `email_verified` and `email_verified_at`.
+- A signed-in user can verify the current account email through:
   - `GET /api/v1/accounts/me/email-verification/`
   - `POST /api/v1/accounts/me/email-verification/request/`
   - `POST /api/v1/accounts/me/email-verification/resend/`
   - `POST /api/v1/accounts/me/email-verification/verify/`
 - Verification OTPs are tied to the exact target email. Changing the profile email invalidates pending challenges and clears verification state.
-- Successfully enabling email-based 2FA also verifies the email because the account has proven control of that address.
+- Successfully enabling email-based 2FA also verifies the email because the account proved control of that address.
 
 ### Login 2FA
 
-- 2FA is **off by default** for every account.
-- A signed-in user or staff member can enable it from their profile.
-- Enabling 2FA requires the current password and a 6-digit code sent to the account email.
-- After it is enabled, every successful username/password login creates an email OTP challenge; JWT access/refresh tokens are issued only after the OTP is verified.
-- OTPs are single-use, expire after `TWO_FACTOR_OTP_TTL_SECONDS`, are limited by `TWO_FACTOR_OTP_MAX_ATTEMPTS`, and can only be resent after `TWO_FACTOR_OTP_RESEND_SECONDS`.
-- Users must disable 2FA before changing the account email.
+- 2FA is **off by default**.
+- Enabling it requires the current password and a six-digit code sent to the account email.
+- After 2FA is enabled, username/password login creates an email OTP challenge and JWTs are issued only after successful OTP verification.
+- OTPs are single-use, expire after `TWO_FACTOR_OTP_TTL_SECONDS`, are attempt-limited, and have a resend cooldown.
 
-### Forgot password
+### Password recovery
 
-`POST /api/v1/accounts/auth/password-reset/` now sends a reset email **only** when the submitted address belongs to an active account. If no active account is associated with the email, the API returns HTTP `404` with error code `account_email_not_found` and sends no email.
+`POST /api/v1/accounts/auth/password-reset/` sends a reset email when the submitted address belongs to an active account. The confirm endpoint is:
 
-Email verification is **not required** for password recovery; an active account with an associated but unverified email may still request a password reset. The confirm endpoint remains `POST /api/v1/accounts/auth/password-reset/confirm/`.
+```text
+POST /api/v1/accounts/auth/password-reset/confirm/
+```
 
-### Resend API production settings on Render
+Provider/configuration failures are converted to HTTP `503` and logged with a bounded provider status/reason without logging API keys, reset tokens, OTP values, or message bodies.
 
-Render Free blocks the common outbound SMTP ports, so production email is configured through **Resend's HTTPS API** using Django Anymail. The backend does not need Gmail, an app password, `EMAIL_HOST`, or port `587`.
+### Brevo API production settings on Render
+
+Production email uses Brevo's transactional REST API over HTTPS. It does **not** use SMTP, port 587, Gmail OAuth, or Resend.
 
 ```env
 FRONTEND_URL=https://smartbatterycalculator.vercel.app
 ACCOUNT_EMAIL_ENABLED=True
-EMAIL_BACKEND=anymail.backends.resend.EmailBackend
-RESEND_API_KEY=re_your_real_key
-DEFAULT_FROM_EMAIL=Smart Battery Calculator <noreply@your-verified-domain.example>
-EMAIL_API_CONNECT_TIMEOUT=5
-EMAIL_API_READ_TIMEOUT=15
+EMAIL_BACKEND=apps.common.email_backends.BrevoApiEmailBackend
+BREVO_API_KEY=<brevo-v3-api-key>
+BREVO_SENDER_EMAIL=<sender-you-verified-in-brevo>
+BREVO_SENDER_NAME=Smart Battery Calculator
+BREVO_REPLY_TO_EMAIL=<optional-reply-address>
+BREVO_API_CONNECT_TIMEOUT=5
+BREVO_API_READ_TIMEOUT=15
 PASSWORD_RESET_TIMEOUT_SECONDS=3600
 TWO_FACTOR_OTP_TTL_SECONDS=600
 TWO_FACTOR_OTP_RESEND_SECONDS=60
 TWO_FACTOR_OTP_MAX_ATTEMPTS=5
 ```
 
-For a first Resend test you may use `onboarding@resend.dev` subject to Resend's test-sender restrictions. For real account emails, verify your sending domain and configure `DEFAULT_FROM_EMAIL` on that domain.
+The sender address must exist as a verified sender in Brevo. If its domain is not authenticated, Brevo can verify the individual sender by emailing a verification code to that address. For long-term deliverability, a domain-authenticated sender is preferable.
 
-Local development defaults to Django's console email backend, so missing Resend credentials do not prevent `runserver` from starting. To test the real provider locally, set the same Resend backend/API-key variables in `.env`.
+Local development still defaults to Django's console backend, so missing Brevo credentials do not prevent `runserver` from starting. To test real delivery locally, set the Brevo backend/API key/sender in `.env`.
 
 Useful checks:
 
 ```bash
+python manage.py brevo_status
 python manage.py email_security_status
-python manage.py email_security_status --send-to delivered@resend.dev
+python manage.py email_security_status --send-to recipient@example.com
 ```
 
-The production settings fail fast with a clear configuration error if account email is enabled but `RESEND_API_KEY` is missing.
-
-
+See `BREVO_API_SETUP.md` for the shortest account/API setup and a direct cURL test that bypasses Django.
 
 ## Secret handling
 
-This package intentionally does **not** contain a populated `.env`/`sbc_backend.env` file. Use `.env.example` for local development and `render.env.example`/`render.yaml` as production templates. Real database, storage and Resend credentials must stay in your local environment or Render's secret environment variables.
+This package intentionally contains no populated `.env` file. Real database, storage and Brevo API credentials belong only in local environment variables or Render secret environment variables. Never commit `BREVO_API_KEY`.
+
+## Local settings selection
+
+For normal local development, use development settings:
+
+```bash
+unset DJANGO_SETTINGS_MODULE
+./scripts/run_dev.sh 127.0.0.1:8000
+```
+
+Render uses `config.settings.production`; its Docker entrypoint runs migrations, maintenance, `collectstatic`, and then Gunicorn.
+
+## v1.8.1 Brevo API transport
+
+Production account email now uses `BrevoApiEmailBackend` over HTTPS. Password-reset, email-verification, and 2FA code continue to use Django's normal `send_mail`/`EmailMultiAlternatives` interfaces; only the transport layer changed.
+
+The backend:
+
+- sends to `POST https://api.brevo.com/v3/smtp/email`;
+- authenticates with the `api-key` request header;
+- always uses the configured verified sender;
+- supports text + HTML alternatives, CC/BCC, Reply-To, and standard byte/string attachments;
+- uses bounded connect/read timeouts;
+- does not blindly retry sends, avoiding accidental duplicate OTP/reset emails after ambiguous network failures;
+- validates Brevo configuration at production startup;
+- reports provider errors safely through the existing HTTP 503 email-security handling.

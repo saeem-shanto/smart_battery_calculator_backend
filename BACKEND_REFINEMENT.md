@@ -1,4 +1,25 @@
+# Backend refinement history
+
+## v1.8.1 Brevo HTTPS API transport
+
+- Replaced Gmail API/OAuth as the active production transport with a much simpler Brevo REST API backend.
+- Render Free remains compatible because all provider traffic is HTTPS, not SMTP.
+- Added fixed verified-sender enforcement, timeouts, HTML/plain-text support, CC/BCC, Reply-To, ordinary attachments, diagnostics, tests and production fail-fast checks.
+- Password reset, email verification and OTP 2FA behavior above the transport layer is unchanged.
+- Added `BREVO_API_SETUP.md` with direct API-key and send smoke tests.
+
 # Backend refinement summary
+
+## v1.7.0 Gmail API transport
+
+- Replaced the production Resend/Anymail transport with a custom Django Gmail REST API backend over HTTPS.
+- Uses OAuth2 refresh-token flow; no SMTP port, Gmail App Password, custom sending domain, or Resend account is required.
+- Preserves all existing Django `send_mail`/`EmailMultiAlternatives` callers for password reset, email verification, and 2FA.
+- Access tokens are cached only in process memory and refreshed automatically; one retry is performed after an HTTP 401.
+- Production validates sender email, OAuth client ID/secret, refresh token, and HTTPS frontend URL before startup.
+- Added a one-time local OAuth helper (`scripts/get_gmail_refresh_token.py`) that requests only the Gmail send scope and never writes the refresh token to disk.
+- Removed Django Anymail from installed apps and runtime requirements.
+- Added mocked Gmail backend tests so CI/test runs never contact Google.
 
 ## v1.6.0 Render/Resend hardening
 

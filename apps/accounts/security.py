@@ -32,6 +32,58 @@ class EmailDeliveryFailed(RuntimeError):
     pass
 
 
+def email_delivery_error_summary(exc: Exception) -> str:
+    """Return a safe provider-error summary without request headers or message bodies.
+
+    HTTP provider exceptions usually expose the provider response. We only
+    surface the status code and a bounded provider error message. This is useful
+    for distinguishing OAuth failures (400/401), permission restrictions (403),
+    rate limits (429), and transient provider failures (5xx) without logging the
+    Authorization header, refresh token, reset token, OTP, or email body.
+    """
+
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    reason = ""
+    if response is not None:
+        try:
+            payload = response.json()
+            if isinstance(payload, dict):
+                error_value = payload.get("error")
+                if isinstance(error_value, dict):
+                    reason = str(
+                        error_value.get("message")
+                        or error_value.get("status")
+                        or error_value.get("code")
+                        or ""
+                    ).strip()
+                else:
+                    reason = str(
+                        payload.get("message")
+                        or error_value
+                        or payload.get("error_description")
+                        or payload.get("name")
+                        or ""
+                    ).strip()
+            elif payload is not None:
+                reason = str(payload).strip()
+        except Exception:
+            reason = str(getattr(response, "text", "") or "").strip()
+
+    if not reason and response is None:
+        reason = str(exc or "").strip()
+
+    if reason:
+        reason = " ".join(reason.split())[:500]
+
+    parts = [type(exc).__name__]
+    if status is not None:
+        parts.append(f"HTTP {status}")
+    if reason:
+        parts.append(reason)
+    return " - ".join(parts)
+
+
 @dataclass(frozen=True)
 class ChallengeResult:
     challenge_id: str
@@ -45,8 +97,8 @@ def email_security_available() -> bool:
     """Return whether the configured email backend has the credentials it needs.
 
     This deliberately understands the backends used by this project instead of
-    assuming every non-console backend is SMTP. Render production uses the
-    Resend HTTP API through Anymail, so SMTP credentials are irrelevant there.
+    assuming every non-console backend is SMTP. Render production uses Brevo's
+    transactional REST API over HTTPS, so SMTP credentials are irrelevant there.
     """
 
     if not getattr(settings, "ACCOUNT_EMAIL_ENABLED", False):
@@ -67,14 +119,12 @@ def email_security_available() -> bool:
     if backend == "django.core.mail.backends.filebased.EmailBackend":
         return bool(getattr(settings, "EMAIL_FILE_PATH", ""))
 
-    if backend == "anymail.backends.resend.EmailBackend":
-        anymail = getattr(settings, "ANYMAIL", {}) or {}
-        api_key = (
-            anymail.get("RESEND_API_KEY")
-            or getattr(settings, "ANYMAIL_RESEND_API_KEY", "")
-            or getattr(settings, "RESEND_API_KEY", "")
+    if backend == "apps.common.email_backends.BrevoApiEmailBackend":
+        required = (
+            getattr(settings, "BREVO_API_KEY", ""),
+            getattr(settings, "BREVO_SENDER_EMAIL", ""),
         )
-        return bool(str(api_key or "").strip())
+        return all(bool(str(value or "").strip()) for value in required)
 
     if backend == "django.core.mail.backends.smtp.EmailBackend":
         return bool(
@@ -144,7 +194,7 @@ def _send_email(subject: str, to_email: str, text_body: str, html_body: str) -> 
         logger.warning(
             "Security email delivery failed via %s: %s",
             getattr(settings, "EMAIL_BACKEND", "unknown"),
-            type(exc).__name__,
+            email_delivery_error_summary(exc),
         )
         raise EmailDeliveryFailed("The security email could not be sent.") from exc
     if sent != 1:

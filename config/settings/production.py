@@ -56,6 +56,15 @@ SECURE_HSTS_PRELOAD = env.bool("SECURE_HSTS_PRELOAD", default=False)  # noqa: F4
 WHITENOISE_AUTOREFRESH = False
 WHITENOISE_USE_FINDERS = False
 
+# Production API responses are JSON-only. This prevents the DRF browsable API
+# from becoming a runtime dependency on static CSS assets and reduces the
+# production attack surface. Swagger/Redoc remain available through
+# drf-spectacular's dedicated documentation routes.
+REST_FRAMEWORK["DEFAULT_RENDERER_CLASSES"] = (  # noqa: F405
+    "rest_framework.renderers.JSONRenderer",
+)
+
+
 # ---------------------------------------------------------------------------
 # Supabase Storage
 # ---------------------------------------------------------------------------
@@ -90,29 +99,46 @@ DATABASES["default"]["OPTIONS"].setdefault(  # noqa: F405
 )
 
 # ---------------------------------------------------------------------------
-# Transactional email on Render: Resend HTTP API through Anymail
+# Transactional email on Render: Brevo API over HTTPS
 # ---------------------------------------------------------------------------
-# Render Free blocks outbound SMTP ports such as 587. Production therefore uses
-# Resend's HTTPS API through Anymail instead of Gmail/SMTP.
+# Render Free restricts common outbound SMTP ports. Brevo's transactional API
+# runs over HTTPS and preserves Django's normal send_mail/EmailMessage API.
 EMAIL_BACKEND = env(  # noqa: F405
     "EMAIL_BACKEND",
-    default="anymail.backends.resend.EmailBackend",
+    default="apps.common.email_backends.BrevoApiEmailBackend",
 ).strip()
 
 if ACCOUNT_EMAIL_ENABLED:  # noqa: F405
-    if EMAIL_BACKEND != "anymail.backends.resend.EmailBackend":
+    if EMAIL_BACKEND != "apps.common.email_backends.BrevoApiEmailBackend":
         raise ImproperlyConfigured(
-            "Production account email must use anymail.backends.resend.EmailBackend."
+            "Production account email must use apps.common.email_backends.BrevoApiEmailBackend."
         )
-    if not RESEND_API_KEY:  # noqa: F405
-        raise ImproperlyConfigured(
-            "RESEND_API_KEY must be set when ACCOUNT_EMAIL_ENABLED=True in production."
-        )
-    if not DEFAULT_FROM_EMAIL or "@" not in DEFAULT_FROM_EMAIL:  # noqa: F405
-        raise ImproperlyConfigured(
-            "DEFAULT_FROM_EMAIL must contain a valid sender address when account email is enabled."
-        )
+
+    _required_brevo = {
+        "BREVO_API_KEY": BREVO_API_KEY,  # noqa: F405
+        "BREVO_SENDER_EMAIL": BREVO_SENDER_EMAIL,  # noqa: F405
+    }
+    for _name, _value in _required_brevo.items():
+        if not str(_value or "").strip():
+            raise ImproperlyConfigured(
+                f"{_name} must be set when ACCOUNT_EMAIL_ENABLED=True in production."
+            )
+
+    if "@" not in BREVO_SENDER_EMAIL:  # noqa: F405
+        raise ImproperlyConfigured("BREVO_SENDER_EMAIL must be a valid verified sender email address.")
+
+    # Keep one authoritative sender identity. Do not require operators to maintain
+    # a second DEFAULT_FROM_EMAIL environment value that can drift from Brevo.
+    # The custom backend also enforces BREVO_SENDER_EMAIL when building the API
+    # payload, so callers cannot spoof the From address.
+    DEFAULT_FROM_EMAIL = (
+        f"{BREVO_SENDER_NAME} <{BREVO_SENDER_EMAIL}>"  # noqa: F405
+        if BREVO_SENDER_NAME  # noqa: F405
+        else BREVO_SENDER_EMAIL  # noqa: F405
+    )
+
     if not FRONTEND_URL.startswith("https://"):  # noqa: F405
         raise ImproperlyConfigured(
             "FRONTEND_URL must use HTTPS in production when account email security is enabled."
         )
+
