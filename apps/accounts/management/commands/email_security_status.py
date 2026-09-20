@@ -6,32 +6,56 @@ from apps.accounts.security import email_security_available
 
 
 class Command(BaseCommand):
-    help = "Check email-security configuration and optionally send a test message."
+    help = "Check account-email configuration and optionally send a live test message."
 
     def add_arguments(self, parser):
-        parser.add_argument("--send-to", dest="send_to", default="", help="Optional recipient for a live SMTP test email.")
+        parser.add_argument(
+            "--send-to",
+            dest="send_to",
+            default="",
+            help="Optional recipient for a live email-provider test.",
+        )
 
     def handle(self, *args, **options):
+        backend = settings.EMAIL_BACKEND
         available = email_security_available()
+
         self.stdout.write(f"Account email security enabled: {settings.ACCOUNT_EMAIL_ENABLED}")
-        self.stdout.write(f"Email backend: {settings.EMAIL_BACKEND}")
-        self.stdout.write(f"SMTP host: {settings.EMAIL_HOST}:{settings.EMAIL_PORT}")
-        self.stdout.write(f"TLS enabled: {settings.EMAIL_USE_TLS}")
-        self.stdout.write(f"Sender configured: {bool(settings.EMAIL_HOST_USER)}")
+        self.stdout.write(f"Email backend: {backend}")
+        self.stdout.write(f"Default sender: {settings.DEFAULT_FROM_EMAIL}")
         self.stdout.write(f"Frontend URL: {settings.FRONTEND_URL}")
+
+        if backend == "anymail.backends.resend.EmailBackend":
+            anymail = getattr(settings, "ANYMAIL", {}) or {}
+            self.stdout.write(f"Resend API key configured: {bool(anymail.get('RESEND_API_KEY'))}")
+            self.stdout.write(
+                f"Anymail request timeout: {anymail.get('REQUESTS_TIMEOUT', 'default')}"
+            )
+        elif backend == "django.core.mail.backends.smtp.EmailBackend":
+            self.stdout.write(f"SMTP host configured: {bool(getattr(settings, 'EMAIL_HOST', ''))}")
+            self.stdout.write(f"SMTP sender configured: {bool(getattr(settings, 'EMAIL_HOST_USER', ''))}")
+        else:
+            self.stdout.write("Provider-specific credentials are managed by the selected backend.")
+
         if not available:
-            raise CommandError("Email security is not ready. Check ACCOUNT_EMAIL_ENABLED and SMTP credentials.")
+            raise CommandError(
+                "Email security is not ready. Check ACCOUNT_EMAIL_ENABLED and the selected backend credentials."
+            )
         self.stdout.write(self.style.SUCCESS("Email security configuration is ready."))
 
         recipient = (options.get("send_to") or "").strip()
         if recipient:
-            sent = send_mail(
-                "Smart Battery Calculator email test",
-                "Email-based security is configured correctly.",
-                settings.DEFAULT_FROM_EMAIL,
-                [recipient],
-                fail_silently=False,
-            )
+            try:
+                sent = send_mail(
+                    "Smart Battery Calculator email test",
+                    "Email-based security is configured correctly.",
+                    settings.DEFAULT_FROM_EMAIL,
+                    [recipient],
+                )
+            except Exception as exc:
+                raise CommandError(
+                    f"Provider test failed: {type(exc).__name__}. Check the application logs/provider dashboard."
+                ) from exc
             if sent != 1:
-                raise CommandError("The SMTP test email was not accepted for delivery.")
-            self.stdout.write(self.style.SUCCESS(f"Test email sent to {recipient}."))
+                raise CommandError("The email provider did not accept the test message.")
+            self.stdout.write(self.style.SUCCESS(f"Test email accepted for {recipient}."))

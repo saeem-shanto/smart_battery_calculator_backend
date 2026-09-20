@@ -4,6 +4,9 @@ from .base import *  # noqa: F401,F403
 
 DEBUG = False
 
+# ---------------------------------------------------------------------------
+# Required production secrets / infrastructure
+# ---------------------------------------------------------------------------
 if SECRET_KEY == "unsafe-dev-key-change-me":  # noqa: F405
     raise ImproperlyConfigured("SECRET_KEY must be set in production.")
 if len(SECRET_KEY.encode("utf-8")) < 32:  # noqa: F405
@@ -20,7 +23,19 @@ if render_hostname and render_hostname not in ALLOWED_HOSTS:  # noqa: F405
 
 if "*" in ALLOWED_HOSTS:  # noqa: F405
     raise ImproperlyConfigured("Wildcard ALLOWED_HOSTS is not permitted in production.")
+if not ALLOWED_HOSTS:  # noqa: F405
+    raise ImproperlyConfigured("ALLOWED_HOSTS must contain at least one production host.")
 
+# FRONTEND_URL is the canonical browser origin. Add it to CORS/CSRF allowlists
+# automatically when it is an HTTPS production URL; additional preview origins
+# can still be supplied through the environment variables.
+if FRONTEND_URL.startswith("https://"):  # noqa: F405
+    if FRONTEND_URL not in CORS_ALLOWED_ORIGINS:  # noqa: F405
+        CORS_ALLOWED_ORIGINS.append(FRONTEND_URL)  # noqa: F405
+    if FRONTEND_URL not in CSRF_TRUSTED_ORIGINS:  # noqa: F405
+        CSRF_TRUSTED_ORIGINS.append(FRONTEND_URL)  # noqa: F405
+
+# Render terminates TLS before forwarding traffic to the container.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
 
@@ -31,15 +46,21 @@ CSRF_COOKIE_HTTPONLY = False
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
 
-SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=False)  # noqa: F405
+SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)  # noqa: F405
 SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=3600)  # noqa: F405
-SECURE_HSTS_INCLUDE_SUBDOMAINS = False
-SECURE_HSTS_PRELOAD = False
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool(  # noqa: F405
+    "SECURE_HSTS_INCLUDE_SUBDOMAINS", default=False
+)
+SECURE_HSTS_PRELOAD = env.bool("SECURE_HSTS_PRELOAD", default=False)  # noqa: F405
 
 WHITENOISE_AUTOREFRESH = False
 WHITENOISE_USE_FINDERS = False
 
-# Supabase Storage is mandatory for retained production artifacts.
+# ---------------------------------------------------------------------------
+# Supabase Storage
+# ---------------------------------------------------------------------------
+# Retained artifacts are private and production should never silently fall back
+# to the container filesystem, which is ephemeral on Render.
 if not SUPABASE_STORAGE_ENABLED:  # noqa: F405
     raise ImproperlyConfigured("SUPABASE_STORAGE_ENABLED must be True in production.")
 
@@ -54,20 +75,44 @@ for _name, _value in _required_storage.items():
     if not str(_value or "").strip():
         raise ImproperlyConfigured(f"{_name} must be set in production.")
 
-# The production database must be PostgreSQL (Supabase).
+# ---------------------------------------------------------------------------
+# Supabase PostgreSQL
+# ---------------------------------------------------------------------------
 if DATABASES["default"]["ENGINE"] != "django.db.backends.postgresql":  # noqa: F405
     raise ImproperlyConfigured("Production DATABASE_URL must point to PostgreSQL/Supabase.")
 DATABASES["default"].setdefault("OPTIONS", {})  # noqa: F405
 DATABASES["default"]["OPTIONS"].setdefault("sslmode", "require")  # noqa: F405
-DATABASES["default"]["OPTIONS"].setdefault("connect_timeout", DATABASE_CONNECT_TIMEOUT)  # noqa: F405
-DATABASES["default"]["OPTIONS"].setdefault("application_name", "smart-battery-api")  # noqa: F405
+DATABASES["default"]["OPTIONS"].setdefault(  # noqa: F405
+    "connect_timeout", DATABASE_CONNECT_TIMEOUT
+)
+DATABASES["default"]["OPTIONS"].setdefault(  # noqa: F405
+    "application_name", "smart-battery-api"
+)
 
+# ---------------------------------------------------------------------------
+# Transactional email on Render: Resend HTTP API through Anymail
+# ---------------------------------------------------------------------------
+# Render Free blocks outbound SMTP ports such as 587. Production therefore uses
+# Resend's HTTPS API through Anymail instead of Gmail/SMTP.
+EMAIL_BACKEND = env(  # noqa: F405
+    "EMAIL_BACKEND",
+    default="anymail.backends.resend.EmailBackend",
+).strip()
 
-# If email security features are enabled in production, SMTP credentials are mandatory.
 if ACCOUNT_EMAIL_ENABLED:  # noqa: F405
-    if not EMAIL_HOST_USER or not EMAIL_HOST_PASSWORD:  # noqa: F405
+    if EMAIL_BACKEND != "anymail.backends.resend.EmailBackend":
         raise ImproperlyConfigured(
-            "EMAIL_HOST_USER and EMAIL_HOST_PASSWORD must be set when ACCOUNT_EMAIL_ENABLED=True."
+            "Production account email must use anymail.backends.resend.EmailBackend."
+        )
+    if not RESEND_API_KEY:  # noqa: F405
+        raise ImproperlyConfigured(
+            "RESEND_API_KEY must be set when ACCOUNT_EMAIL_ENABLED=True in production."
+        )
+    if not DEFAULT_FROM_EMAIL or "@" not in DEFAULT_FROM_EMAIL:  # noqa: F405
+        raise ImproperlyConfigured(
+            "DEFAULT_FROM_EMAIL must contain a valid sender address when account email is enabled."
         )
     if not FRONTEND_URL.startswith("https://"):  # noqa: F405
-        raise ImproperlyConfigured("FRONTEND_URL must use HTTPS in production when account email security is enabled.")
+        raise ImproperlyConfigured(
+            "FRONTEND_URL must use HTTPS in production when account email security is enabled."
+        )

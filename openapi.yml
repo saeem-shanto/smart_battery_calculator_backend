@@ -251,6 +251,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/LoginResponse'
           description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
   /api/v1/accounts/auth/token/refresh/:
     post:
       operationId: accounts_auth_token_refresh_create
@@ -743,6 +761,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LoginResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
           description: ''
   /api/v1/admin/auth/token/refresh/:
     post:
@@ -1463,8 +1499,9 @@ paths:
   /api/v1/feedback/:
     post:
       operationId: feedback_create
-      description: Submit a 1–5 rating and optional comment. A calculation can be
-        linked only when its private calculation token is also provided.
+      description: Submit a 1–5 rating and optional comment. Guest calculations require
+        their private calculation token; claimed calculations require the authenticated
+        owner or an administrator.
       summary: Submit project feedback
       tags:
       - Feedback

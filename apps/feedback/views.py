@@ -14,7 +14,7 @@ from .serializers import FeedbackCreateSerializer, FeedbackResponseSerializer
         tags=["Feedback"],
         summary="Submit project feedback",
         description=(
-            "Submit a 1–5 rating and optional comment. A calculation can be linked only when its private calculation token is also provided."
+            "Submit a 1–5 rating and optional comment. Guest calculations require their private calculation token; claimed calculations require the authenticated owner or an administrator."
         ),
         request=FeedbackCreateSerializer,
         responses={201: FeedbackResponseSerializer, 400: ApiErrorSerializer},

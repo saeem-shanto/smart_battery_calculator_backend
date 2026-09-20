@@ -2,7 +2,7 @@
   "info": {
     "name": "Smart Battery Calculator API v1.5 - Supabase Postgres + Storage",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Full Postman verification collection for Smart Battery Calculator backend v1.3. Run folders in order. For requests containing a File field, select the relevant workbook manually after import. For the calculation and dedup requests, attach the exact same Vanikavipuldata.xls bytes. Admin credentials default to admin/123 for local development only; change collection variables for other environments."
+    "description": "Full Postman verification collection for Smart Battery Calculator backend v1.5.x. Run folders in order. For requests containing a File field, select the relevant workbook manually after import. For the calculation and dedup requests, attach the exact same Vanikavipuldata.xls bytes. Set adminPassword manually in Postman; no real/default administrator password is shipped. Production account email uses the Resend HTTPS API through Django Anymail rather than SMTP port 587."
   },
   "variable": [
     {

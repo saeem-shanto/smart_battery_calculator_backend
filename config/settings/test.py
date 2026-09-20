@@ -47,9 +47,7 @@ PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 # Keep email-security tests local and deterministic.
 ACCOUNT_EMAIL_ENABLED = True
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
-EMAIL_HOST_USER = "test-sender@gmail.com"
-EMAIL_HOST_PASSWORD = "test-app-password"
-DEFAULT_FROM_EMAIL = "Smart Battery Calculator <test-sender@gmail.com>"
+DEFAULT_FROM_EMAIL = "Smart Battery Calculator <test@example.com>"
 FRONTEND_URL = "http://localhost:3000"
 TWO_FACTOR_OTP_TTL_SECONDS = 600
 TWO_FACTOR_OTP_RESEND_SECONDS = 0

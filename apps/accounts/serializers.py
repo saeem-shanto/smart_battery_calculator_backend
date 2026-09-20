@@ -18,6 +18,7 @@ from apps.calculations.artifact_access import calculation_artifacts
 from apps.calculations.models import Calculation
 from apps.calculations.serializers import CalculationFileSerializer
 
+from .exceptions import EmailServiceUnavailable
 from .models import TwoFactorChallenge, UserProfile
 from .security import (
     EmailDeliveryFailed,
@@ -178,7 +179,7 @@ class UserTokenObtainPairSerializer(TokenObtainPairSerializer):
             try:
                 challenge = create_two_factor_challenge(user, TwoFactorChallenge.Purpose.LOGIN_USER)
             except (EmailSecurityUnavailable, EmailDeliveryFailed) as exc:
-                raise serializers.ValidationError({"non_field_errors": [str(exc)]}) from exc
+                raise EmailServiceUnavailable(str(exc)) from exc
             return {
                 "two_factor_required": True,
                 "challenge_id": challenge.challenge_id,

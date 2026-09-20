@@ -5,9 +5,11 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+from apps.accounts.exceptions import EmailServiceUnavailable
 from apps.accounts.models import TwoFactorChallenge, UserProfile
 from apps.accounts.security import EmailDeliveryFailed, EmailSecurityUnavailable, create_two_factor_challenge
 from apps.accounts.serializers import LoginResponseSerializer, UserSummarySerializer
+from apps.common.api_serializers import ApiErrorSerializer
 
 
 class AdminTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -33,7 +35,7 @@ class AdminTokenObtainPairSerializer(TokenObtainPairSerializer):
             try:
                 challenge = create_two_factor_challenge(user, TwoFactorChallenge.Purpose.LOGIN_ADMIN)
             except (EmailSecurityUnavailable, EmailDeliveryFailed) as exc:
-                raise serializers.ValidationError({"non_field_errors": [str(exc)]}) from exc
+                raise EmailServiceUnavailable(str(exc)) from exc
             return {
                 "two_factor_required": True,
                 "challenge_id": challenge.challenge_id,
@@ -51,7 +53,15 @@ class AdminTokenObtainPairSerializer(TokenObtainPairSerializer):
         }
 
 
-@extend_schema(tags=["Admin Authentication"], responses={200: LoginResponseSerializer})
+@extend_schema(
+    tags=["Admin Authentication"],
+    responses={
+        200: LoginResponseSerializer,
+        400: ApiErrorSerializer,
+        401: ApiErrorSerializer,
+        503: ApiErrorSerializer,
+    },
+)
 class AdminTokenObtainPairView(TokenObtainPairView):
     serializer_class = AdminTokenObtainPairSerializer
     throttle_scope = "auth"

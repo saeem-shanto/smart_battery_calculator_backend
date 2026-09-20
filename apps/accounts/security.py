@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import secrets
 from dataclasses import dataclass
 from datetime import timedelta
@@ -20,6 +21,7 @@ from django.utils.http import urlsafe_base64_encode
 from .models import TwoFactorChallenge, UserProfile
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class EmailSecurityUnavailable(RuntimeError):
@@ -40,12 +42,50 @@ class ChallengeResult:
 
 
 def email_security_available() -> bool:
+    """Return whether the configured email backend has the credentials it needs.
+
+    This deliberately understands the backends used by this project instead of
+    assuming every non-console backend is SMTP. Render production uses the
+    Resend HTTP API through Anymail, so SMTP credentials are irrelevant there.
+    """
+
     if not getattr(settings, "ACCOUNT_EMAIL_ENABLED", False):
         return False
-    backend = getattr(settings, "EMAIL_BACKEND", "")
-    if backend.endswith("console.EmailBackend"):
+
+    backend = (getattr(settings, "EMAIL_BACKEND", "") or "").strip()
+    if not backend:
+        return False
+
+    # Local/test backends require no external credentials.
+    local_backends = (
+        "django.core.mail.backends.console.EmailBackend",
+        "django.core.mail.backends.locmem.EmailBackend",
+        "django.core.mail.backends.dummy.EmailBackend",
+    )
+    if backend in local_backends:
         return True
-    return bool(getattr(settings, "EMAIL_HOST_USER", "") and getattr(settings, "EMAIL_HOST_PASSWORD", ""))
+    if backend == "django.core.mail.backends.filebased.EmailBackend":
+        return bool(getattr(settings, "EMAIL_FILE_PATH", ""))
+
+    if backend == "anymail.backends.resend.EmailBackend":
+        anymail = getattr(settings, "ANYMAIL", {}) or {}
+        api_key = (
+            anymail.get("RESEND_API_KEY")
+            or getattr(settings, "ANYMAIL_RESEND_API_KEY", "")
+            or getattr(settings, "RESEND_API_KEY", "")
+        )
+        return bool(str(api_key or "").strip())
+
+    if backend == "django.core.mail.backends.smtp.EmailBackend":
+        return bool(
+            getattr(settings, "EMAIL_HOST", "")
+            and getattr(settings, "EMAIL_HOST_USER", "")
+            and getattr(settings, "EMAIL_HOST_PASSWORD", "")
+        )
+
+    # Custom provider backends are allowed outside production. Their own backend
+    # implementation remains authoritative for any provider-specific settings.
+    return True
 
 
 def mask_email(email: str) -> str:
@@ -99,8 +139,13 @@ def _send_email(subject: str, to_email: str, text_body: str, html_body: str) -> 
     )
     message.attach_alternative(html_body, "text/html")
     try:
-        sent = message.send(fail_silently=False)
-    except Exception as exc:  # external SMTP failure
+        sent = message.send()
+    except Exception as exc:  # external provider/network failure
+        logger.warning(
+            "Security email delivery failed via %s: %s",
+            getattr(settings, "EMAIL_BACKEND", "unknown"),
+            type(exc).__name__,
+        )
         raise EmailDeliveryFailed("The security email could not be sent.") from exc
     if sent != 1:
         raise EmailDeliveryFailed("The security email could not be sent.")

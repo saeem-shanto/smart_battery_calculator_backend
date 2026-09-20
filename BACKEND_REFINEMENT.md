@@ -1,5 +1,16 @@
 # Backend refinement summary
 
+## v1.6.0 Render/Resend hardening
+
+- Replaced the production Gmail/SMTP dependency with Resend through Django Anymail over HTTPS.
+- Local startup no longer requires `RESEND_API_KEY`; production validates it only when account email is enabled.
+- Added provider-aware email readiness checks and provider-neutral email diagnostics.
+- Added bounded HTTP timeouts for transactional email.
+- 2FA provider outages now surface as HTTP 503.
+- Hardened feedback linkage so a historical guest calculation token cannot be reused after account claiming.
+- Removed populated environment secrets from the distributable package and added safe local/Render templates plus Git/Docker ignore rules.
+- Preserved deterministic content-addressed Supabase Storage keys and all client MATLAB source bytes.
+
 This build preserves the client MATLAB source and the v1.5 frontend calculation contract while strengthening the backend in four areas.
 
 ## 1. Privacy and retained-data lifecycle

@@ -1,10 +1,45 @@
 import hashlib
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 from rest_framework.test import APIClient
 
 from apps.calculations.models import Calculation, StoredCsvResult, StoredInputFile
+from apps.accounts.security import email_security_available
+
+
+class EmailBackendConfigurationTests(SimpleTestCase):
+    @override_settings(
+        ACCOUNT_EMAIL_ENABLED=True,
+        EMAIL_BACKEND="anymail.backends.resend.EmailBackend",
+        ANYMAIL={"RESEND_API_KEY": "re_test_key"},
+        RESEND_API_KEY="re_test_key",
+    )
+    def test_resend_backend_is_available_with_api_key(self):
+        self.assertTrue(email_security_available())
+
+    @override_settings(
+        ACCOUNT_EMAIL_ENABLED=True,
+        EMAIL_BACKEND="anymail.backends.resend.EmailBackend",
+        ANYMAIL={"RESEND_API_KEY": ""},
+        RESEND_API_KEY="",
+    )
+    def test_resend_backend_is_unavailable_without_api_key(self):
+        self.assertFalse(email_security_available())
+
+    @override_settings(
+        ACCOUNT_EMAIL_ENABLED=True,
+        EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend",
+    )
+    def test_console_backend_is_available_without_external_credentials(self):
+        self.assertTrue(email_security_available())
+
+    @override_settings(
+        ACCOUNT_EMAIL_ENABLED=False,
+        EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend",
+    )
+    def test_email_security_feature_flag_disables_delivery(self):
+        self.assertFalse(email_security_available())
 
 
 class AccountApiTests(TestCase):
@@ -214,6 +249,21 @@ class EmailSecurityApiTests(TestCase):
         self.assertEqual(verify.status_code, 200, verify.data)
         self.assertTrue(verify.data["access"])
         self.assertTrue(verify.data["refresh"])
+
+    @override_settings(
+        EMAIL_BACKEND="anymail.backends.resend.EmailBackend",
+        ANYMAIL={"RESEND_API_KEY": ""},
+        RESEND_API_KEY="",
+    )
+    def test_two_factor_login_reports_email_provider_unavailable_as_503(self):
+        self._create_2fa_user(username="resenddown")
+        response = self.client.post(
+            "/api/v1/accounts/auth/token/",
+            {"username": "resenddown", "password": self.password},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 503, response.data)
+        self.assertEqual(response.data["error"]["code"], "email_unavailable")
 
     def test_admin_two_factor_login_requires_otp(self):
         import re

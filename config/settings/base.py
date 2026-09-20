@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import timedelta
-import os
 from pathlib import Path
 
 import dj_database_url
@@ -83,13 +82,22 @@ ASGI_APPLICATION = "config.asgi.application"
 DATABASE_CONN_MAX_AGE = env.int("DATABASE_CONN_MAX_AGE", default=60)
 DATABASE_CONNECT_TIMEOUT = env.int("DATABASE_CONNECT_TIMEOUT", default=10)
 
+DATABASE_URL = env("DATABASE_URL", default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}")
 DATABASES = {
     "default": dj_database_url.parse(
-        env("DATABASE_URL", default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}"),
+        DATABASE_URL,
         conn_max_age=DATABASE_CONN_MAX_AGE,
         conn_health_checks=True,
     )
 }
+
+# Keep external database failures bounded. PostgreSQL/Supabase accepts
+# connect_timeout through psycopg's OPTIONS mapping; SQLite does not.
+if DATABASES["default"]["ENGINE"] == "django.db.backends.postgresql":
+    DATABASES["default"].setdefault("OPTIONS", {})
+    DATABASES["default"]["OPTIONS"].setdefault(
+        "connect_timeout", DATABASE_CONNECT_TIMEOUT
+    )
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -260,28 +268,44 @@ SPECTACULAR_SETTINGS = {
 
 
 # Email-based account security (2FA + password reset)
+#
+# Development defaults to Django's console backend so a missing external email
+# credential never prevents the project from starting. Production overrides the
+# default to Anymail's Resend HTTPS API backend (port 443), avoiding Render's
+# Free-plan SMTP port restrictions.
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000").rstrip("/")
 ACCOUNT_EMAIL_ENABLED = env.bool("ACCOUNT_EMAIL_ENABLED", default=False)
 EMAIL_BACKEND = env(
-    "EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend"
-)
-EMAIL_HOST = env("EMAIL_HOST", default="smtp.gmail.com")
+    "EMAIL_BACKEND",
+    default="django.core.mail.backends.console.EmailBackend",
+).strip()
+
+# Optional SMTP compatibility for local/self-hosted environments. These values
+# are not required by Resend's HTTP API backend.
+EMAIL_HOST = env("EMAIL_HOST", default="").strip()
 EMAIL_PORT = env.int("EMAIL_PORT", default=587)
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
 EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="").strip()
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="").strip()
-DEFAULT_FROM_EMAIL = env(
-    "DEFAULT_FROM_EMAIL",
-    default=EMAIL_HOST_USER or "Smart Battery Calculator <no-reply@example.invalid>",
-)
+EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=15)
+
 RESEND_API_KEY = env("RESEND_API_KEY", default="").strip()
+EMAIL_API_CONNECT_TIMEOUT = env.float("EMAIL_API_CONNECT_TIMEOUT", default=5.0)
+EMAIL_API_READ_TIMEOUT = env.float("EMAIL_API_READ_TIMEOUT", default=15.0)
 
 ANYMAIL = {
     "RESEND_API_KEY": RESEND_API_KEY,
+    # Anymail accepts a requests-style (connect, read) timeout tuple. This keeps
+    # a third-party email outage from occupying the single Render worker for an
+    # unbounded period.
+    "REQUESTS_TIMEOUT": (EMAIL_API_CONNECT_TIMEOUT, EMAIL_API_READ_TIMEOUT),
 }
 
-EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=15)
+DEFAULT_FROM_EMAIL = env(
+    "DEFAULT_FROM_EMAIL",
+    default="Smart Battery Calculator <onboarding@resend.dev>",
+).strip()
 PASSWORD_RESET_TIMEOUT = env.int("PASSWORD_RESET_TIMEOUT_SECONDS", default=3600)
 TWO_FACTOR_OTP_TTL_SECONDS = env.int("TWO_FACTOR_OTP_TTL_SECONDS", default=600)
 TWO_FACTOR_OTP_RESEND_SECONDS = env.int("TWO_FACTOR_OTP_RESEND_SECONDS", default=60)

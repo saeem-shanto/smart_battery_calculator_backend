@@ -1,9 +1,11 @@
-# Verification — refined backend v1.5.9
+# Verification — refined backend v1.6.0
 
 ## Static checks completed in this build environment
 
 - All Python source files compile successfully with `compileall`.
 - Postman collection parses as valid JSON.
+- `openapi.yml` and `render.yaml` parse as valid YAML.
+- The distributable tree contains no populated `.env`/`sbc_backend.env` secret file.
 - Original client MATLAB files are byte-for-byte unchanged:
   - `battrail.m`: `536383fe9ffe6a248f0970789ada00b791b2554445ccc64cdf14a73617f808bf`
   - `natpaymenttrail.m`: `6898b5d4fad5f4ed27fbb0de6e409a3d0db5c655b60aae75678b755a5bb5a631`
@@ -14,7 +16,10 @@
   - `retain_data=true` guest calculation/token response unchanged
   - admin endpoint paths unchanged
 - Added migrations exist for optional user profiles, calculation ownership, 2FA, and optional email verification.
-- Password reset now rejects unknown/inactive account emails with HTTP 404 and sends no email.
+- Password reset rejects unknown/inactive account emails with HTTP 404 and sends no email.
+- Production email uses Resend through Anymail over HTTPS; Render port 587 is no longer part of the production path.
+- Resend configuration is provider-aware and missing local API keys no longer crash development settings.
+- Claimed calculations no longer accept their historical guest token for feedback linkage.
 - Email verification challenges are bound to the exact target email address and profile email changes invalidate pending challenges.
 - `.env.example`, `.gitignore`, and `.dockerignore` are present.
 - Local SQLite, virtual environments, Python caches, and macOS ZIP metadata are excluded from the final package.
@@ -34,6 +39,7 @@ python manage.py test
 python manage.py spectacular --file openapi.yml --validate
 python manage.py octave_status
 python manage.py storage_status
+python manage.py email_security_status
 ```
 
 For production settings:
@@ -59,6 +65,8 @@ and dropping `test_postgres` in the project's remote database.
 9. Change that email and confirm verification is cleared and stale verification challenges fail.
 10. Request password reset for an existing unverified email and confirm delivery is attempted.
 11. Request password reset for an unknown email and confirm HTTP 404 with no message sent.
-12. Delete the final calculation referencing an input/result and confirm orphaned Supabase objects are removed.
+12. Run `python manage.py email_security_status --send-to delivered@resend.dev` with Resend configured and confirm acceptance in the Resend dashboard.
+13. Claim a guest calculation, then confirm its old guest token cannot be used to link new feedback without owner/admin JWT.
+14. Delete the final calculation referencing an input/result and confirm orphaned Supabase objects are removed.
 
 The included Postman collection now contains the account/ownership checks and no longer ships with a numeric default administrator password.

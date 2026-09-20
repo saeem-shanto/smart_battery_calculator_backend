@@ -8,7 +8,7 @@ from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import status
-from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.generics import ListAPIView
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -21,6 +21,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from apps.calculations.models import Calculation
 from apps.common.api_serializers import ApiErrorSerializer
 
+from .exceptions import AccountEmailNotFound, EmailServiceUnavailable
 from .models import TwoFactorChallenge, UserProfile
 from .security import (
     EmailDeliveryFailed,
@@ -61,18 +62,6 @@ from .serializers import (
 )
 
 User = get_user_model()
-
-
-class EmailServiceUnavailable(APIException):
-    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    default_detail = "Email security service is temporarily unavailable. Please try again later."
-    default_code = "email_unavailable"
-
-
-class AccountEmailNotFound(APIException):
-    status_code = status.HTTP_404_NOT_FOUND
-    default_detail = "No active account is associated with this email address."
-    default_code = "account_email_not_found"
 
 
 def _auth_payload(user):
@@ -131,7 +120,15 @@ class RegisterView(APIView):
         return Response(_auth_payload(user), status=status.HTTP_201_CREATED)
 
 
-@extend_schema(tags=["User Accounts"], responses={200: LoginResponseSerializer})
+@extend_schema(
+    tags=["User Accounts"],
+    responses={
+        200: LoginResponseSerializer,
+        400: ApiErrorSerializer,
+        401: ApiErrorSerializer,
+        503: ApiErrorSerializer,
+    },
+)
 class UserTokenObtainPairView(TokenObtainPairView):
     serializer_class = UserTokenObtainPairSerializer
     throttle_scope = "auth"

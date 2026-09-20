@@ -37,20 +37,16 @@ services:
         sync: false
       - key: ACCOUNT_EMAIL_ENABLED
         value: "True"
-      - key: EMAIL_HOST
-        value: smtp.gmail.com
-      - key: EMAIL_PORT
-        value: "587"
-      - key: EMAIL_USE_TLS
-        value: "True"
-      - key: EMAIL_USE_SSL
-        value: "False"
-      - key: EMAIL_HOST_USER
-        sync: false
-      - key: EMAIL_HOST_PASSWORD
+      - key: EMAIL_BACKEND
+        value: anymail.backends.resend.EmailBackend
+      - key: RESEND_API_KEY
         sync: false
       - key: DEFAULT_FROM_EMAIL
         sync: false
+      - key: EMAIL_API_CONNECT_TIMEOUT
+        value: "5"
+      - key: EMAIL_API_READ_TIMEOUT
+        value: "15"
       - key: PASSWORD_RESET_TIMEOUT_SECONDS
         value: "3600"
       - key: TWO_FACTOR_OTP_TTL_SECONDS

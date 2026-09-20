@@ -27,6 +27,7 @@ Django creates a temporary compatibility copy named `Vanikavipuldata.xls` only d
 - GNU Octave (`octave-cli`)
 - original client MATLAB source executed unchanged
 - Gunicorn + WhiteNoise
+- Resend transactional email through Django Anymail over HTTPS (no SMTP dependency on Render)
 - optional JWT user accounts with name/email/unique username/profile picture
 - JWT for staff/admin APIs (same Django user model; staff flag controls admin access)
 - guest `X-Calculation-Token` for retained calculations created without an account
@@ -254,6 +255,7 @@ python manage.py migrate
 python manage.py check
 python manage.py octave_status
 python manage.py storage_status
+python manage.py email_security_status
 python manage.py runserver 127.0.0.1:8000
 ```
 
@@ -266,6 +268,7 @@ python manage.py test
 python manage.py octave_status
 python manage.py validate_octave_workbook /path/to/Vanikavipuldata.xls
 python manage.py storage_status
+python manage.py email_security_status
 python manage.py migrate_binary_artifacts_to_storage --dry-run
 python manage.py spectacular --file openapi.yml --validate
 python manage.py purge_expired_data
@@ -294,7 +297,7 @@ After migration, run the included Postman production checks before connecting th
 
 `POST /api/v1/calculations/client-workbook/` accepts `retain_data`. When `true`, the unique input, canonical `Results_RPAtrail400.csv`, and calculation record are retained using the existing deduplicated audit model. When `false`, processing is transient: no `Calculation`, `StoredInputFile`, or `StoredCsvResult` rows are created. The response contains the result plus a base64-encoded transient CSV for immediate download. The transient validation endpoint `POST /api/v1/profiles/client-workbook/validate/` also never stores uploaded bytes or parsed values.
 
-## Email security: optional 2FA, email verification, and password recovery (v1.5.9)
+## Email security: optional 2FA, email verification, and password recovery (v1.6.0)
 
 The account system keeps email verification optional while separating it cleanly from login 2FA and password recovery.
 
@@ -326,26 +329,39 @@ The account system keeps email verification optional while separating it cleanly
 
 Email verification is **not required** for password recovery; an active account with an associated but unverified email may still request a password reset. The confirm endpoint remains `POST /api/v1/accounts/auth/password-reset/confirm/`.
 
-### Gmail SMTP production settings
+### Resend API production settings on Render
 
-For Gmail SMTP, use a dedicated sender account and a Google **App Password**, not the normal Gmail password. Configure the deployment environment using secrets rather than committed values.
+Render Free blocks the common outbound SMTP ports, so production email is configured through **Resend's HTTPS API** using Django Anymail. The backend does not need Gmail, an app password, `EMAIL_HOST`, or port `587`.
 
 ```env
 FRONTEND_URL=https://smartbatterycalculator.vercel.app
 ACCOUNT_EMAIL_ENABLED=True
-EMAIL_HOST=smtp.gmail.com
-EMAIL_PORT=587
-EMAIL_USE_TLS=True
-EMAIL_USE_SSL=False
-EMAIL_HOST_USER=your-sender@gmail.com
-EMAIL_HOST_PASSWORD=<GOOGLE_APP_PASSWORD>
-DEFAULT_FROM_EMAIL=Smart Battery Calculator <your-sender@gmail.com>
-EMAIL_TIMEOUT=15
+EMAIL_BACKEND=anymail.backends.resend.EmailBackend
+RESEND_API_KEY=re_your_real_key
+DEFAULT_FROM_EMAIL=Smart Battery Calculator <noreply@your-verified-domain.example>
+EMAIL_API_CONNECT_TIMEOUT=5
+EMAIL_API_READ_TIMEOUT=15
 PASSWORD_RESET_TIMEOUT_SECONDS=3600
 TWO_FACTOR_OTP_TTL_SECONDS=600
 TWO_FACTOR_OTP_RESEND_SECONDS=60
 TWO_FACTOR_OTP_MAX_ATTEMPTS=5
 ```
 
-Local development can use either the console email backend or a real SMTP/API provider.
+For a first Resend test you may use `onboarding@resend.dev` subject to Resend's test-sender restrictions. For real account emails, verify your sending domain and configure `DEFAULT_FROM_EMAIL` on that domain.
 
+Local development defaults to Django's console email backend, so missing Resend credentials do not prevent `runserver` from starting. To test the real provider locally, set the same Resend backend/API-key variables in `.env`.
+
+Useful checks:
+
+```bash
+python manage.py email_security_status
+python manage.py email_security_status --send-to delivered@resend.dev
+```
+
+The production settings fail fast with a clear configuration error if account email is enabled but `RESEND_API_KEY` is missing.
+
+
+
+## Secret handling
+
+This package intentionally does **not** contain a populated `.env`/`sbc_backend.env` file. Use `.env.example` for local development and `render.env.example`/`render.yaml` as production templates. Real database, storage and Resend credentials must stay in your local environment or Render's secret environment variables.

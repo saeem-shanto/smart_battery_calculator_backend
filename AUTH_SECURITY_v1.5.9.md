@@ -1,5 +1,8 @@
 # Authentication and email security — v1.5.9
 
+> Historical document: production email transport was superseded in v1.6.0 by Resend through Django Anymail over HTTPS. See `AUTH_SECURITY_v1.6.0.md`.
+
+
 ## Behaviour contract
 
 ### Registration and login
