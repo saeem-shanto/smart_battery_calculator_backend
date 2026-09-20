@@ -2,6 +2,10 @@ from django.urls import path
 
 from .views import (
     AvatarDownloadView,
+    EmailVerificationRequestView,
+    EmailVerificationResendView,
+    EmailVerificationStatusView,
+    EmailVerificationVerifyView,
     LogoutView,
     MeView,
     MyCalculationsView,
@@ -35,5 +39,9 @@ urlpatterns = [
     path("me/two-factor/enable/", TwoFactorEnableStartView.as_view(), name="account-two-factor-enable"),
     path("me/two-factor/enable/verify/", TwoFactorEnableVerifyView.as_view(), name="account-two-factor-enable-verify"),
     path("me/two-factor/disable/", TwoFactorDisableView.as_view(), name="account-two-factor-disable"),
+    path("me/email-verification/", EmailVerificationStatusView.as_view(), name="account-email-verification-status"),
+    path("me/email-verification/request/", EmailVerificationRequestView.as_view(), name="account-email-verification-request"),
+    path("me/email-verification/resend/", EmailVerificationResendView.as_view(), name="account-email-verification-resend"),
+    path("me/email-verification/verify/", EmailVerificationVerifyView.as_view(), name="account-email-verification-verify"),
     path("me/calculations/", MyCalculationsView.as_view(), name="account-calculations"),
 ]

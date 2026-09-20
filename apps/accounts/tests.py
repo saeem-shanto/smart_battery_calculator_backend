@@ -27,6 +27,8 @@ class AccountApiTests(TestCase):
         self.assertTrue(response.data["access"])
         self.assertTrue(response.data["refresh"])
         self.assertEqual(response.data["user"]["username"], "saeem_test")
+        self.assertFalse(response.data["user"]["email_verified"])
+        self.assertIsNone(response.data["user"]["email_verified_at"])
         user = get_user_model().objects.get(username="saeem_test")
         self.assertTrue(hasattr(user, "battery_profile"))
 
@@ -257,6 +259,7 @@ class EmailSecurityApiTests(TestCase):
         )
         self.assertEqual(verify.status_code, 200, verify.data)
         self.assertTrue(verify.data["two_factor_enabled"])
+        self.assertTrue(verify.data["email_verified"])
 
         disable = self.client.post(
             "/api/v1/accounts/me/two-factor/disable/",
@@ -296,11 +299,96 @@ class EmailSecurityApiTests(TestCase):
         user.refresh_from_db()
         self.assertTrue(user.check_password(new_password))
 
-    def test_password_reset_request_does_not_reveal_missing_email(self):
+    def test_password_reset_request_rejects_email_without_active_account(self):
         response = self.client.post(
             "/api/v1/accounts/auth/password-reset/",
             {"email": "missing@example.com"},
             format="json",
         )
-        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.status_code, 404, response.data)
+        self.assertEqual(response.data["error"]["code"], "account_email_not_found")
         self.assertEqual(len(self.mail.outbox), 0)
+
+    def test_password_reset_does_not_require_verified_email(self):
+        user = self.User.objects.create_user(
+            username="unverified-reset",
+            email="unverified-reset@example.com",
+            password=self.password,
+        )
+        response = self.client.post(
+            "/api/v1/accounts/auth/password-reset/",
+            {"email": user.email},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["detail"], "Password reset email sent.")
+        self.assertEqual(len(self.mail.outbox), 1)
+
+    def test_user_can_verify_email_later_and_profile_exposes_status(self):
+        import re
+
+        user = self.User.objects.create_user(
+            username="verifylater",
+            email="verifylater@example.com",
+            password=self.password,
+        )
+        token = self.client.post(
+            "/api/v1/accounts/auth/token/",
+            {"username": user.username, "password": self.password},
+            format="json",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.data['access']}")
+
+        status_before = self.client.get("/api/v1/accounts/me/email-verification/")
+        self.assertEqual(status_before.status_code, 200, status_before.data)
+        self.assertFalse(status_before.data["verified"])
+
+        request_code = self.client.post("/api/v1/accounts/me/email-verification/request/", {}, format="json")
+        self.assertEqual(request_code.status_code, 200, request_code.data)
+        self.assertEqual(len(self.mail.outbox), 1)
+        code = re.search(r"\b(\d{6})\b", self.mail.outbox[-1].body).group(1)
+
+        verify = self.client.post(
+            "/api/v1/accounts/me/email-verification/verify/",
+            {"challenge_id": request_code.data["challenge_id"], "code": code},
+            format="json",
+        )
+        self.assertEqual(verify.status_code, 200, verify.data)
+        self.assertTrue(verify.data["email_verified"])
+        self.assertIsNotNone(verify.data["email_verified_at"])
+
+        status_after = self.client.get("/api/v1/accounts/me/email-verification/")
+        self.assertTrue(status_after.data["verified"])
+        self.assertIsNotNone(status_after.data["verified_at"])
+
+    def test_changing_email_clears_verification_and_invalidates_old_challenge(self):
+        import re
+
+        user = self.User.objects.create_user(
+            username="emailchange",
+            email="first@example.com",
+            password=self.password,
+        )
+        token = self.client.post(
+            "/api/v1/accounts/auth/token/",
+            {"username": user.username, "password": self.password},
+            format="json",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.data['access']}")
+        first = self.client.post("/api/v1/accounts/me/email-verification/request/", {}, format="json")
+        code = re.search(r"\b(\d{6})\b", self.mail.outbox[-1].body).group(1)
+
+        changed = self.client.patch(
+            "/api/v1/accounts/me/",
+            {"email": "second@example.com"},
+            format="json",
+        )
+        self.assertEqual(changed.status_code, 200, changed.data)
+        self.assertFalse(changed.data["email_verified"])
+
+        stale = self.client.post(
+            "/api/v1/accounts/me/email-verification/verify/",
+            {"challenge_id": first.data["challenge_id"], "code": code},
+            format="json",
+        )
+        self.assertEqual(stale.status_code, 400, stale.data)

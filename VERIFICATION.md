@@ -1,4 +1,4 @@
-# Verification — refined backend v1.5.8
+# Verification — refined backend v1.5.9
 
 ## Static checks completed in this build environment
 
@@ -13,7 +13,9 @@
   - `retain_data=false` transient response unchanged
   - `retain_data=true` guest calculation/token response unchanged
   - admin endpoint paths unchanged
-- Added migrations exist for optional user profiles and calculation ownership.
+- Added migrations exist for optional user profiles, calculation ownership, 2FA, and optional email verification.
+- Password reset now rejects unknown/inactive account emails with HTTP 404 and sends no email.
+- Email verification challenges are bound to the exact target email address and profile email changes invalidate pending challenges.
 - `.env.example`, `.gitignore`, and `.dockerignore` are present.
 - Local SQLite, virtual environments, Python caches, and macOS ZIP metadata are excluded from the final package.
 
@@ -53,6 +55,10 @@ and dropping `test_postgres` in the project's remote database.
 5. Register a user, claim the guest calculation using JWT + the private token, then confirm the old guest token receives 403 and owner JWT succeeds.
 6. Upload/download/replace a profile picture and confirm the old avatar object is removed.
 7. Staff/admin login, refresh, dashboard list/detail, file download and file deletion.
-8. Delete the final calculation referencing an input/result and confirm orphaned Supabase objects are removed.
+8. Verify an account email through the authenticated request/verify flow; confirm `email_verified=true`.
+9. Change that email and confirm verification is cleared and stale verification challenges fail.
+10. Request password reset for an existing unverified email and confirm delivery is attempted.
+11. Request password reset for an unknown email and confirm HTTP 404 with no message sent.
+12. Delete the final calculation referencing an input/result and confirm orphaned Supabase objects are removed.
 
 The included Postman collection now contains the account/ownership checks and no longer ships with a numeric default administrator password.

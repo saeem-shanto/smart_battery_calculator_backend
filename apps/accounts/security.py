@@ -62,6 +62,22 @@ def mask_email(email: str) -> str:
     return f"{local_masked}@{domain}"
 
 
+def normalize_email(email: str) -> str:
+    return (email or "").strip().lower()
+
+
+def is_user_email_verified(user, profile: UserProfile | None = None) -> bool:
+    current_email = normalize_email(getattr(user, "email", ""))
+    if not current_email:
+        return False
+    if profile is None:
+        try:
+            profile = user.battery_profile
+        except UserProfile.DoesNotExist:
+            return False
+    return normalize_email(profile.verified_email) == current_email
+
+
 def _otp_digest(challenge_id: str, code: str) -> str:
     payload = f"{challenge_id}:{code}".encode("utf-8")
     key = settings.SECRET_KEY.encode("utf-8")
@@ -97,6 +113,9 @@ def _otp_email(user, code: str, purpose: str) -> tuple[str, str, str]:
     if purpose == TwoFactorChallenge.Purpose.ENABLE:
         subject = "Confirm two-factor authentication"
         action = "confirm two-factor authentication for your Smart Battery Calculator account"
+    elif purpose == TwoFactorChallenge.Purpose.VERIFY_EMAIL:
+        subject = "Verify your Smart Battery Calculator email"
+        action = "verify this email address for your Smart Battery Calculator account"
     else:
         subject = "Your Smart Battery Calculator sign-in code"
         action = "complete your Smart Battery Calculator sign-in"
@@ -120,8 +139,9 @@ def _otp_email(user, code: str, purpose: str) -> tuple[str, str, str]:
 
 
 def create_two_factor_challenge(user, purpose: str) -> ChallengeResult:
-    if not user.email:
-        raise EmailSecurityUnavailable("An email address is required for two-factor authentication.")
+    target_email = normalize_email(user.email)
+    if not target_email:
+        raise EmailSecurityUnavailable("An email address is required for this email-security action.")
     if not email_security_available():
         raise EmailSecurityUnavailable("Email security features are not configured.")
 
@@ -139,6 +159,7 @@ def create_two_factor_challenge(user, purpose: str) -> ChallengeResult:
         challenge = TwoFactorChallenge.objects.create(
             user=user,
             purpose=purpose,
+            target_email=target_email,
             expires_at=now + timedelta(seconds=ttl_seconds),
             last_sent_at=now,
         )
@@ -147,7 +168,7 @@ def create_two_factor_challenge(user, purpose: str) -> ChallengeResult:
 
     subject, text, html = _otp_email(user, code, purpose)
     try:
-        _send_email(subject, user.email, text, html)
+        _send_email(subject, target_email, text, html)
     except Exception:
         TwoFactorChallenge.objects.filter(pk=challenge.pk).update(consumed_at=timezone.now())
         raise
@@ -156,7 +177,7 @@ def create_two_factor_challenge(user, purpose: str) -> ChallengeResult:
         challenge_id=str(challenge.id),
         expires_in=ttl_seconds,
         resend_after=resend_after,
-        masked_email=mask_email(user.email),
+        masked_email=mask_email(target_email),
         purpose=purpose,
     )
 
@@ -181,9 +202,13 @@ def resend_two_factor_challenge(challenge_id: str) -> ChallengeResult:
         challenge.attempts = 0
         challenge.save(update_fields=["code_digest", "expires_at", "last_sent_at", "attempts"])
 
+    target_email = normalize_email(challenge.target_email or challenge.user.email)
+    if not target_email:
+        TwoFactorChallenge.objects.filter(pk=challenge.pk).update(consumed_at=timezone.now())
+        raise EmailSecurityUnavailable("The email address for this verification challenge is no longer available.")
     subject, text, html = _otp_email(challenge.user, code, challenge.purpose)
     try:
-        _send_email(subject, challenge.user.email, text, html)
+        _send_email(subject, target_email, text, html)
     except Exception:
         TwoFactorChallenge.objects.filter(pk=challenge.pk).update(consumed_at=timezone.now())
         raise
@@ -191,7 +216,7 @@ def resend_two_factor_challenge(challenge_id: str) -> ChallengeResult:
         challenge_id=str(challenge.id),
         expires_in=ttl_seconds,
         resend_after=resend_after,
-        masked_email=mask_email(challenge.user.email),
+        masked_email=mask_email(target_email),
         purpose=challenge.purpose,
     )
 

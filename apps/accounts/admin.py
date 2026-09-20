@@ -5,9 +5,13 @@ from .models import TwoFactorChallenge, UserProfile
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ("user", "two_factor_enabled", "has_avatar", "created_at", "updated_at")
+    list_display = ("user", "email_is_verified", "two_factor_enabled", "has_avatar", "created_at", "updated_at")
     search_fields = ("user__username", "user__email", "user__first_name", "user__last_name")
-    readonly_fields = ("created_at", "updated_at")
+    readonly_fields = ("verified_email", "email_verified_at", "created_at", "updated_at")
+
+    @admin.display(boolean=True, description="Email verified")
+    def email_is_verified(self, obj):
+        return bool(obj.user.email and obj.verified_email.strip().lower() == obj.user.email.strip().lower())
 
     @admin.display(boolean=True)
     def has_avatar(self, obj):

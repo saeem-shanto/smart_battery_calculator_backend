@@ -177,6 +177,7 @@ REST_FRAMEWORK = {
         "auth": "10/minute",
         "registration": "5/hour",
         "two_factor": "10/minute",
+        "email_verification": "5/hour",
         "password_reset": "5/hour",
     },
 }
@@ -194,9 +195,10 @@ SPECTACULAR_SETTINGS = {
     "TITLE": "Smart Solar Battery Calculator API",
     "DESCRIPTION": (
         "Production API for Project N01. The original client MATLAB files are executed unchanged under GNU Octave. "
-        "Retained input files and canonical CSV result artifacts are persisted in Supabase Storage; record metadata is persisted in PostgreSQL."
+        "Retained input files and canonical CSV result artifacts are persisted in Supabase Storage; record metadata is persisted in PostgreSQL. "
+        "Account email verification is optional; password reset requires an email address associated with an active account."
     ),
-    "VERSION": "1.5.8",
+    "VERSION": "1.5.9",
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
     "SCHEMA_PATH_PREFIX": r"/api/v1",

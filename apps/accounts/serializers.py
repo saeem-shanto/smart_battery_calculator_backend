@@ -6,6 +6,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.contrib.auth.tokens import default_token_generator
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
 from drf_spectacular.utils import extend_schema_field
@@ -22,6 +23,8 @@ from .security import (
     EmailDeliveryFailed,
     EmailSecurityUnavailable,
     create_two_factor_challenge,
+    is_user_email_verified,
+    normalize_email,
 )
 
 User = get_user_model()
@@ -31,6 +34,8 @@ class UserSummarySerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
     avatar_download_path = serializers.SerializerMethodField()
     two_factor_enabled = serializers.SerializerMethodField()
+    email_verified = serializers.SerializerMethodField()
+    email_verified_at = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -44,6 +49,8 @@ class UserSummarySerializer(serializers.ModelSerializer):
             "is_staff",
             "avatar_download_path",
             "two_factor_enabled",
+            "email_verified",
+            "email_verified_at",
         ]
         read_only_fields = fields
 
@@ -64,6 +71,24 @@ class UserSummarySerializer(serializers.ModelSerializer):
             return bool(obj.battery_profile.two_factor_enabled)
         except UserProfile.DoesNotExist:
             return False
+
+    @extend_schema_field(serializers.BooleanField())
+    def get_email_verified(self, obj) -> bool:
+        try:
+            profile = obj.battery_profile
+        except UserProfile.DoesNotExist:
+            return False
+        return is_user_email_verified(obj, profile)
+
+    @extend_schema_field(serializers.DateTimeField(allow_null=True))
+    def get_email_verified_at(self, obj):
+        try:
+            profile = obj.battery_profile
+        except UserProfile.DoesNotExist:
+            return None
+        if not is_user_email_verified(obj, profile):
+            return None
+        return profile.email_verified_at
 
 
 class AuthResponseSerializer(serializers.Serializer):
@@ -213,11 +238,42 @@ class TwoFactorStatusSerializer(serializers.Serializer):
     enabled = serializers.BooleanField()
     email = serializers.EmailField(allow_blank=True)
     masked_email = serializers.CharField(allow_blank=True)
+    email_verified = serializers.BooleanField()
     email_configured = serializers.BooleanField()
+
+
+class EmailVerificationStatusSerializer(serializers.Serializer):
+    email = serializers.EmailField(allow_blank=True)
+    masked_email = serializers.CharField(allow_blank=True)
+    verified = serializers.BooleanField()
+    verified_at = serializers.DateTimeField(allow_null=True)
+    email_configured = serializers.BooleanField()
+
+
+class EmailVerificationChallengeSerializer(serializers.Serializer):
+    challenge_id = serializers.UUIDField()
+    expires_in = serializers.IntegerField()
+    resend_after = serializers.IntegerField()
+    masked_email = serializers.CharField()
+
+
+class EmailVerificationVerifySerializer(TwoFactorVerifySerializer):
+    pass
+
+
+class EmailVerificationResendSerializer(serializers.Serializer):
+    challenge_id = serializers.UUIDField()
 
 
 class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField(max_length=254)
+
+    def validate_email(self, value):
+        return normalize_email(value)
+
+
+class PasswordResetRequestResponseSerializer(serializers.Serializer):
+    detail = serializers.CharField()
 
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
@@ -292,16 +348,32 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         avatar_marker = object()
         avatar = validated_data.pop("avatar", avatar_marker)
+        previous_email = normalize_email(instance.email)
         for field, value in validated_data.items():
             setattr(instance, field, value)
         try:
             instance.save()
         except IntegrityError as exc:
             raise serializers.ValidationError({"username": "That username is already in use."}) from exc
+
         profile, _ = UserProfile.objects.get_or_create(user=instance)
+        update_fields = []
         if avatar is not avatar_marker:
             profile.avatar = "" if avatar is None else avatar
-            profile.save()
+            update_fields.append("avatar")
+
+        current_email = normalize_email(instance.email)
+        if current_email != previous_email:
+            profile.verified_email = ""
+            profile.email_verified_at = None
+            update_fields.extend(["verified_email", "email_verified_at"])
+            TwoFactorChallenge.objects.filter(
+                user=instance,
+                consumed_at__isnull=True,
+            ).update(consumed_at=timezone.now())
+
+        if update_fields:
+            profile.save(update_fields=[*dict.fromkeys(update_fields), "updated_at"])
         return instance
 
 

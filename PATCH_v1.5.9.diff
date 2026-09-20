@@ -1,0 +1,892 @@
+Only in /mnt/data/backend_v159: AUTH_SECURITY_v1.5.9.md
+Only in /mnt/data/backend_v159: PATCH_v1.5.9.diff
+Only in /mnt/data/backend_v159: PATCH_v1.5.9_EMAIL_VERIFICATION.md
+diff -ru '--exclude=__pycache__' '--exclude=*.pyc' /mnt/data/be_deploy_fix/README.md /mnt/data/backend_v159/README.md
+--- /mnt/data/be_deploy_fix/README.md	2026-09-19 23:00:31.574339484 +0000
++++ /mnt/data/backend_v159/README.md	2026-09-20 00:34:24.963759030 +0000
+@@ -294,9 +294,22 @@
+ 
+ `POST /api/v1/calculations/client-workbook/` accepts `retain_data`. When `true`, the unique input, canonical `Results_RPAtrail400.csv`, and calculation record are retained using the existing deduplicated audit model. When `false`, processing is transient: no `Calculation`, `StoredInputFile`, or `StoredCsvResult` rows are created. The response contains the result plus a base64-encoded transient CSV for immediate download. The transient validation endpoint `POST /api/v1/profiles/client-workbook/validate/` also never stores uploaded bytes or parsed values.
+ 
+-## Email security: optional 2FA and forgot password (v1.5.8)
++## Email security: optional 2FA, email verification, and password recovery (v1.5.9)
+ 
+-The account system supports optional email-based two-factor authentication and password recovery.
++The account system keeps email verification optional while separating it cleanly from login 2FA and password recovery.
++
++### Optional email verification
++
++- Registration does **not** require email verification.
++- Normal username/password login does **not** require a verified email.
++- `GET /api/v1/accounts/me/` now exposes `email_verified` and `email_verified_at`.
++- A signed-in user can verify the current account email later through:
++  - `GET /api/v1/accounts/me/email-verification/`
++  - `POST /api/v1/accounts/me/email-verification/request/`
++  - `POST /api/v1/accounts/me/email-verification/resend/`
++  - `POST /api/v1/accounts/me/email-verification/verify/`
++- Verification OTPs are tied to the exact target email. Changing the profile email invalidates pending challenges and clears verification state.
++- Successfully enabling email-based 2FA also verifies the email because the account has proven control of that address.
+ 
+ ### Login 2FA
+ 
+@@ -305,15 +318,17 @@
+ - Enabling 2FA requires the current password and a 6-digit code sent to the account email.
+ - After it is enabled, every successful username/password login creates an email OTP challenge; JWT access/refresh tokens are issued only after the OTP is verified.
+ - OTPs are single-use, expire after `TWO_FACTOR_OTP_TTL_SECONDS`, are limited by `TWO_FACTOR_OTP_MAX_ATTEMPTS`, and can only be resent after `TWO_FACTOR_OTP_RESEND_SECONDS`.
+-- Users must disable 2FA before changing the account email, then re-enable it to verify the new address.
++- Users must disable 2FA before changing the account email.
+ 
+ ### Forgot password
+ 
+-`POST /api/v1/accounts/auth/password-reset/` accepts an email address and always returns a generic success message when the service is available, preventing account enumeration. The email contains a signed Django password-reset link pointing to `FRONTEND_URL/account/reset-password`. The confirm endpoint is `POST /api/v1/accounts/auth/password-reset/confirm/`.
++`POST /api/v1/accounts/auth/password-reset/` now sends a reset email **only** when the submitted address belongs to an active account. If no active account is associated with the email, the API returns HTTP `404` with error code `account_email_not_found` and sends no email.
++
++Email verification is **not required** for password recovery; an active account with an associated but unverified email may still request a password reset. The confirm endpoint remains `POST /api/v1/accounts/auth/password-reset/confirm/`.
+ 
+ ### Gmail SMTP production settings
+ 
+-For Gmail SMTP, use a dedicated sender account and a Google **App Password**, not the normal Gmail password. Configure on Render:
++For Gmail SMTP, use a dedicated sender account and a Google **App Password**, not the normal Gmail password. Configure the deployment environment using secrets rather than committed values.
+ 
+ ```env
+ FRONTEND_URL=https://smartbatterycalculator.vercel.app
+@@ -332,4 +347,5 @@
+ TWO_FACTOR_OTP_MAX_ATTEMPTS=5
+ ```
+ 
+-In local development the console email backend can be used, so OTP and reset-link messages appear in the Django terminal instead of being sent externally.
++Local development can use either the console email backend or a real SMTP/API provider.
++
+diff -ru '--exclude=__pycache__' '--exclude=*.pyc' /mnt/data/be_deploy_fix/VERIFICATION.md /mnt/data/backend_v159/VERIFICATION.md
+--- /mnt/data/be_deploy_fix/VERIFICATION.md	2026-09-19 23:00:31.514339899 +0000
++++ /mnt/data/backend_v159/VERIFICATION.md	2026-09-20 00:35:43.200634675 +0000
+@@ -1,4 +1,4 @@
+-# Verification — refined backend v1.5.8
++# Verification — refined backend v1.5.9
+ 
+ ## Static checks completed in this build environment
+ 
+@@ -13,7 +13,9 @@
+   - `retain_data=false` transient response unchanged
+   - `retain_data=true` guest calculation/token response unchanged
+   - admin endpoint paths unchanged
+-- Added migrations exist for optional user profiles and calculation ownership.
++- Added migrations exist for optional user profiles, calculation ownership, 2FA, and optional email verification.
++- Password reset now rejects unknown/inactive account emails with HTTP 404 and sends no email.
++- Email verification challenges are bound to the exact target email address and profile email changes invalidate pending challenges.
+ - `.env.example`, `.gitignore`, and `.dockerignore` are present.
+ - Local SQLite, virtual environments, Python caches, and macOS ZIP metadata are excluded from the final package.
+ 
+@@ -53,6 +55,10 @@
+ 5. Register a user, claim the guest calculation using JWT + the private token, then confirm the old guest token receives 403 and owner JWT succeeds.
+ 6. Upload/download/replace a profile picture and confirm the old avatar object is removed.
+ 7. Staff/admin login, refresh, dashboard list/detail, file download and file deletion.
+-8. Delete the final calculation referencing an input/result and confirm orphaned Supabase objects are removed.
++8. Verify an account email through the authenticated request/verify flow; confirm `email_verified=true`.
++9. Change that email and confirm verification is cleared and stale verification challenges fail.
++10. Request password reset for an existing unverified email and confirm delivery is attempted.
++11. Request password reset for an unknown email and confirm HTTP 404 with no message sent.
++12. Delete the final calculation referencing an input/result and confirm orphaned Supabase objects are removed.
+ 
+ The included Postman collection now contains the account/ownership checks and no longer ships with a numeric default administrator password.
+diff -ru '--exclude=__pycache__' '--exclude=*.pyc' /mnt/data/be_deploy_fix/apps/accounts/admin.py /mnt/data/backend_v159/apps/accounts/admin.py
+--- /mnt/data/be_deploy_fix/apps/accounts/admin.py	2026-09-19 20:25:55.000000000 +0000
++++ /mnt/data/backend_v159/apps/accounts/admin.py	2026-09-20 00:32:04.063931579 +0000
+@@ -5,9 +5,13 @@
+ 
+ @admin.register(UserProfile)
+ class UserProfileAdmin(admin.ModelAdmin):
+-    list_display = ("user", "two_factor_enabled", "has_avatar", "created_at", "updated_at")
++    list_display = ("user", "email_is_verified", "two_factor_enabled", "has_avatar", "created_at", "updated_at")
+     search_fields = ("user__username", "user__email", "user__first_name", "user__last_name")
+-    readonly_fields = ("created_at", "updated_at")
++    readonly_fields = ("verified_email", "email_verified_at", "created_at", "updated_at")
++
++    @admin.display(boolean=True, description="Email verified")
++    def email_is_verified(self, obj):
++        return bool(obj.user.email and obj.verified_email.strip().lower() == obj.user.email.strip().lower())
+ 
+     @admin.display(boolean=True)
+     def has_avatar(self, obj):
+Only in /mnt/data/backend_v159/apps/accounts/migrations: 0003_email_verification.py
+diff -ru '--exclude=__pycache__' '--exclude=*.pyc' /mnt/data/be_deploy_fix/apps/accounts/models.py /mnt/data/backend_v159/apps/accounts/models.py
+--- /mnt/data/be_deploy_fix/apps/accounts/models.py	2026-09-19 20:31:20.000000000 +0000
++++ /mnt/data/backend_v159/apps/accounts/models.py	2026-09-20 00:30:34.342143041 +0000
+@@ -29,6 +29,8 @@
+     )
+     avatar = models.ImageField(upload_to=user_avatar_upload_to, max_length=500, blank=True)
+     two_factor_enabled = models.BooleanField(default=False)
++    verified_email = models.EmailField(max_length=254, blank=True, default="")
++    email_verified_at = models.DateTimeField(null=True, blank=True)
+     created_at = models.DateTimeField(auto_now_add=True)
+     updated_at = models.DateTimeField(auto_now=True)
+ 
+@@ -41,6 +43,7 @@
+         LOGIN_USER = "login_user", "User login"
+         LOGIN_ADMIN = "login_admin", "Admin login"
+         ENABLE = "enable", "Enable two-factor authentication"
++        VERIFY_EMAIL = "verify_email", "Verify account email"
+ 
+     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+     user = models.ForeignKey(
+@@ -49,6 +52,7 @@
+         related_name="two_factor_challenges",
+     )
+     purpose = models.CharField(max_length=32, choices=Purpose.choices)
++    target_email = models.EmailField(max_length=254, blank=True, default="")
+     code_digest = models.CharField(max_length=64, blank=True)
+     expires_at = models.DateTimeField()
+     last_sent_at = models.DateTimeField()
+diff -ru '--exclude=__pycache__' '--exclude=*.pyc' /mnt/data/be_deploy_fix/apps/accounts/security.py /mnt/data/backend_v159/apps/accounts/security.py
+--- /mnt/data/be_deploy_fix/apps/accounts/security.py	2026-09-19 22:12:26.000000000 +0000
++++ /mnt/data/backend_v159/apps/accounts/security.py	2026-09-20 00:30:51.953775236 +0000
+@@ -62,6 +62,22 @@
+     return f"{local_masked}@{domain}"
+ 
+ 
++def normalize_email(email: str) -> str:
++    return (email or "").strip().lower()
++
++
++def is_user_email_verified(user, profile: UserProfile | None = None) -> bool:
++    current_email = normalize_email(getattr(user, "email", ""))
++    if not current_email:
++        return False
++    if profile is None:
++        try:
++            profile = user.battery_profile
++        except UserProfile.DoesNotExist:
++            return False
++    return normalize_email(profile.verified_email) == current_email
++
++
+ def _otp_digest(challenge_id: str, code: str) -> str:
+     payload = f"{challenge_id}:{code}".encode("utf-8")
+     key = settings.SECRET_KEY.encode("utf-8")
+@@ -97,6 +113,9 @@
+     if purpose == TwoFactorChallenge.Purpose.ENABLE:
+         subject = "Confirm two-factor authentication"
+         action = "confirm two-factor authentication for your Smart Battery Calculator account"
++    elif purpose == TwoFactorChallenge.Purpose.VERIFY_EMAIL:
++        subject = "Verify your Smart Battery Calculator email"
++        action = "verify this email address for your Smart Battery Calculator account"
+     else:
+         subject = "Your Smart Battery Calculator sign-in code"
+         action = "complete your Smart Battery Calculator sign-in"
+@@ -120,8 +139,9 @@
+ 
+ 
+ def create_two_factor_challenge(user, purpose: str) -> ChallengeResult:
+-    if not user.email:
+-        raise EmailSecurityUnavailable("An email address is required for two-factor authentication.")
++    target_email = normalize_email(user.email)
++    if not target_email:
++        raise EmailSecurityUnavailable("An email address is required for this email-security action.")
+     if not email_security_available():
+         raise EmailSecurityUnavailable("Email security features are not configured.")
+ 
+@@ -139,6 +159,7 @@
+         challenge = TwoFactorChallenge.objects.create(
+             user=user,
+             purpose=purpose,
++            target_email=target_email,
+             expires_at=now + timedelta(seconds=ttl_seconds),
+             last_sent_at=now,
+         )
+@@ -147,7 +168,7 @@
+ 
+     subject, text, html = _otp_email(user, code, purpose)
+     try:
+-        _send_email(subject, user.email, text, html)
++        _send_email(subject, target_email, text, html)
+     except Exception:
+         TwoFactorChallenge.objects.filter(pk=challenge.pk).update(consumed_at=timezone.now())
+         raise
+@@ -156,7 +177,7 @@
+         challenge_id=str(challenge.id),
+         expires_in=ttl_seconds,
+         resend_after=resend_after,
+-        masked_email=mask_email(user.email),
++        masked_email=mask_email(target_email),
+         purpose=purpose,
+     )
+ 
+@@ -181,9 +202,13 @@
+         challenge.attempts = 0
+         challenge.save(update_fields=["code_digest", "expires_at", "last_sent_at", "attempts"])
+ 
++    target_email = normalize_email(challenge.target_email or challenge.user.email)
++    if not target_email:
++        TwoFactorChallenge.objects.filter(pk=challenge.pk).update(consumed_at=timezone.now())
++        raise EmailSecurityUnavailable("The email address for this verification challenge is no longer available.")
+     subject, text, html = _otp_email(challenge.user, code, challenge.purpose)
+     try:
+-        _send_email(subject, challenge.user.email, text, html)
++        _send_email(subject, target_email, text, html)
+     except Exception:
+         TwoFactorChallenge.objects.filter(pk=challenge.pk).update(consumed_at=timezone.now())
+         raise
+@@ -191,7 +216,7 @@
+         challenge_id=str(challenge.id),
+         expires_in=ttl_seconds,
+         resend_after=resend_after,
+-        masked_email=mask_email(challenge.user.email),
++        masked_email=mask_email(target_email),
+         purpose=challenge.purpose,
+     )
+ 
+diff -ru '--exclude=__pycache__' '--exclude=*.pyc' /mnt/data/be_deploy_fix/apps/accounts/serializers.py /mnt/data/backend_v159/apps/accounts/serializers.py
+--- /mnt/data/be_deploy_fix/apps/accounts/serializers.py	2026-09-19 20:32:38.000000000 +0000
++++ /mnt/data/backend_v159/apps/accounts/serializers.py	2026-09-20 00:31:11.765323646 +0000
+@@ -6,6 +6,7 @@
+ from django.core.exceptions import ValidationError as DjangoValidationError
+ from django.contrib.auth.tokens import default_token_generator
+ from django.db import IntegrityError, transaction
++from django.utils import timezone
+ from django.utils.encoding import force_str
+ from django.utils.http import urlsafe_base64_decode
+ from drf_spectacular.utils import extend_schema_field
+@@ -22,6 +23,8 @@
+     EmailDeliveryFailed,
+     EmailSecurityUnavailable,
+     create_two_factor_challenge,
++    is_user_email_verified,
++    normalize_email,
+ )
+ 
+ User = get_user_model()
+@@ -31,6 +34,8 @@
+     name = serializers.SerializerMethodField()
+     avatar_download_path = serializers.SerializerMethodField()
+     two_factor_enabled = serializers.SerializerMethodField()
++    email_verified = serializers.SerializerMethodField()
++    email_verified_at = serializers.SerializerMethodField()
+ 
+     class Meta:
+         model = User
+@@ -44,6 +49,8 @@
+             "is_staff",
+             "avatar_download_path",
+             "two_factor_enabled",
++            "email_verified",
++            "email_verified_at",
+         ]
+         read_only_fields = fields
+ 
+@@ -65,6 +72,24 @@
+         except UserProfile.DoesNotExist:
+             return False
+ 
++    @extend_schema_field(serializers.BooleanField())
++    def get_email_verified(self, obj) -> bool:
++        try:
++            profile = obj.battery_profile
++        except UserProfile.DoesNotExist:
++            return False
++        return is_user_email_verified(obj, profile)
++
++    @extend_schema_field(serializers.DateTimeField(allow_null=True))
++    def get_email_verified_at(self, obj):
++        try:
++            profile = obj.battery_profile
++        except UserProfile.DoesNotExist:
++            return None
++        if not is_user_email_verified(obj, profile):
++            return None
++        return profile.email_verified_at
++
+ 
+ class AuthResponseSerializer(serializers.Serializer):
+     access = serializers.CharField()
+@@ -213,12 +238,43 @@
+     enabled = serializers.BooleanField()
+     email = serializers.EmailField(allow_blank=True)
+     masked_email = serializers.CharField(allow_blank=True)
++    email_verified = serializers.BooleanField()
+     email_configured = serializers.BooleanField()
+ 
+ 
++class EmailVerificationStatusSerializer(serializers.Serializer):
++    email = serializers.EmailField(allow_blank=True)
++    masked_email = serializers.CharField(allow_blank=True)
++    verified = serializers.BooleanField()
++    verified_at = serializers.DateTimeField(allow_null=True)
++    email_configured = serializers.BooleanField()
++
++
++class EmailVerificationChallengeSerializer(serializers.Serializer):
++    challenge_id = serializers.UUIDField()
++    expires_in = serializers.IntegerField()
++    resend_after = serializers.IntegerField()
++    masked_email = serializers.CharField()
++
++
++class EmailVerificationVerifySerializer(TwoFactorVerifySerializer):
++    pass
++
++
++class EmailVerificationResendSerializer(serializers.Serializer):
++    challenge_id = serializers.UUIDField()
++
++
+ class PasswordResetRequestSerializer(serializers.Serializer):
+     email = serializers.EmailField(max_length=254)
+ 
++    def validate_email(self, value):
++        return normalize_email(value)
++
++
++class PasswordResetRequestResponseSerializer(serializers.Serializer):
++    detail = serializers.CharField()
++
+ 
+ class PasswordResetConfirmSerializer(serializers.Serializer):
+     uid = serializers.CharField()
+@@ -292,16 +348,32 @@
+     def update(self, instance, validated_data):
+         avatar_marker = object()
+         avatar = validated_data.pop("avatar", avatar_marker)
++        previous_email = normalize_email(instance.email)
+         for field, value in validated_data.items():
+             setattr(instance, field, value)
+         try:
+             instance.save()
+         except IntegrityError as exc:
+             raise serializers.ValidationError({"username": "That username is already in use."}) from exc
++
+         profile, _ = UserProfile.objects.get_or_create(user=instance)
++        update_fields = []
+         if avatar is not avatar_marker:
+             profile.avatar = "" if avatar is None else avatar
+-            profile.save()
++            update_fields.append("avatar")
++
++        current_email = normalize_email(instance.email)
++        if current_email != previous_email:
++            profile.verified_email = ""
++            profile.email_verified_at = None
++            update_fields.extend(["verified_email", "email_verified_at"])
++            TwoFactorChallenge.objects.filter(
++                user=instance,
++                consumed_at__isnull=True,
++            ).update(consumed_at=timezone.now())
++
++        if update_fields:
++            profile.save(update_fields=[*dict.fromkeys(update_fields), "updated_at"])
+         return instance
+ 
+ 
+diff -ru '--exclude=__pycache__' '--exclude=*.pyc' /mnt/data/be_deploy_fix/apps/accounts/tests.py /mnt/data/backend_v159/apps/accounts/tests.py
+--- /mnt/data/be_deploy_fix/apps/accounts/tests.py	2026-09-19 20:26:16.000000000 +0000
++++ /mnt/data/backend_v159/apps/accounts/tests.py	2026-09-20 00:32:33.367247009 +0000
+@@ -27,6 +27,8 @@
+         self.assertTrue(response.data["access"])
+         self.assertTrue(response.data["refresh"])
+         self.assertEqual(response.data["user"]["username"], "saeem_test")
++        self.assertFalse(response.data["user"]["email_verified"])
++        self.assertIsNone(response.data["user"]["email_verified_at"])
+         user = get_user_model().objects.get(username="saeem_test")
+         self.assertTrue(hasattr(user, "battery_profile"))
+ 
+@@ -257,6 +259,7 @@
+         )
+         self.assertEqual(verify.status_code, 200, verify.data)
+         self.assertTrue(verify.data["two_factor_enabled"])
++        self.assertTrue(verify.data["email_verified"])
+ 
+         disable = self.client.post(
+             "/api/v1/accounts/me/two-factor/disable/",
+@@ -296,11 +299,96 @@
+         user.refresh_from_db()
+         self.assertTrue(user.check_password(new_password))
+ 
+-    def test_password_reset_request_does_not_reveal_missing_email(self):
++    def test_password_reset_request_rejects_email_without_active_account(self):
+         response = self.client.post(
+             "/api/v1/accounts/auth/password-reset/",
+             {"email": "missing@example.com"},
+             format="json",
+         )
+-        self.assertEqual(response.status_code, 200, response.data)
++        self.assertEqual(response.status_code, 404, response.data)
++        self.assertEqual(response.data["error"]["code"], "account_email_not_found")
+         self.assertEqual(len(self.mail.outbox), 0)
++
++    def test_password_reset_does_not_require_verified_email(self):
++        user = self.User.objects.create_user(
++            username="unverified-reset",
++            email="unverified-reset@example.com",
++            password=self.password,
++        )
++        response = self.client.post(
++            "/api/v1/accounts/auth/password-reset/",
++            {"email": user.email},
++            format="json",
++        )
++        self.assertEqual(response.status_code, 200, response.data)
++        self.assertEqual(response.data["detail"], "Password reset email sent.")
++        self.assertEqual(len(self.mail.outbox), 1)
++
++    def test_user_can_verify_email_later_and_profile_exposes_status(self):
++        import re
++
++        user = self.User.objects.create_user(
++            username="verifylater",
++            email="verifylater@example.com",
++            password=self.password,
++        )
++        token = self.client.post(
++            "/api/v1/accounts/auth/token/",
++            {"username": user.username, "password": self.password},
++            format="json",
++        )
++        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.data['access']}")
++
++        status_before = self.client.get("/api/v1/accounts/me/email-verification/")
++        self.assertEqual(status_before.status_code, 200, status_before.data)
++        self.assertFalse(status_before.data["verified"])
++
++        request_code = self.client.post("/api/v1/accounts/me/email-verification/request/", {}, format="json")
++        self.assertEqual(request_code.status_code, 200, request_code.data)
++        self.assertEqual(len(self.mail.outbox), 1)
++        code = re.search(r"\b(\d{6})\b", self.mail.outbox[-1].body).group(1)
++
++        verify = self.client.post(
++            "/api/v1/accounts/me/email-verification/verify/",
++            {"challenge_id": request_code.data["challenge_id"], "code": code},
++            format="json",
++        )
++        self.assertEqual(verify.status_code, 200, verify.data)
++        self.assertTrue(verify.data["email_verified"])
++        self.assertIsNotNone(verify.data["email_verified_at"])
++
++        status_after = self.client.get("/api/v1/accounts/me/email-verification/")
++        self.assertTrue(status_after.data["verified"])
++        self.assertIsNotNone(status_after.data["verified_at"])
++
++    def test_changing_email_clears_verification_and_invalidates_old_challenge(self):
++        import re
++
++        user = self.User.objects.create_user(
++            username="emailchange",
++            email="first@example.com",
++            password=self.password,
++        )
++        token = self.client.post(
++            "/api/v1/accounts/auth/token/",
++            {"username": user.username, "password": self.password},
++            format="json",
++        )
++        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.data['access']}")
++        first = self.client.post("/api/v1/accounts/me/email-verification/request/", {}, format="json")
++        code = re.search(r"\b(\d{6})\b", self.mail.outbox[-1].body).group(1)
++
++        changed = self.client.patch(
++            "/api/v1/accounts/me/",
++            {"email": "second@example.com"},
++            format="json",
++        )
++        self.assertEqual(changed.status_code, 200, changed.data)
++        self.assertFalse(changed.data["email_verified"])
++
++        stale = self.client.post(
++            "/api/v1/accounts/me/email-verification/verify/",
++            {"challenge_id": first.data["challenge_id"], "code": code},
++            format="json",
++        )
++        self.assertEqual(stale.status_code, 400, stale.data)
+diff -ru '--exclude=__pycache__' '--exclude=*.pyc' /mnt/data/be_deploy_fix/apps/accounts/urls.py /mnt/data/backend_v159/apps/accounts/urls.py
+--- /mnt/data/be_deploy_fix/apps/accounts/urls.py	2026-09-19 20:25:26.000000000 +0000
++++ /mnt/data/backend_v159/apps/accounts/urls.py	2026-09-20 00:31:50.384560638 +0000
+@@ -2,6 +2,10 @@
+ 
+ from .views import (
+     AvatarDownloadView,
++    EmailVerificationRequestView,
++    EmailVerificationResendView,
++    EmailVerificationStatusView,
++    EmailVerificationVerifyView,
+     LogoutView,
+     MeView,
+     MyCalculationsView,
+@@ -35,5 +39,9 @@
+     path("me/two-factor/enable/", TwoFactorEnableStartView.as_view(), name="account-two-factor-enable"),
+     path("me/two-factor/enable/verify/", TwoFactorEnableVerifyView.as_view(), name="account-two-factor-enable-verify"),
+     path("me/two-factor/disable/", TwoFactorDisableView.as_view(), name="account-two-factor-disable"),
++    path("me/email-verification/", EmailVerificationStatusView.as_view(), name="account-email-verification-status"),
++    path("me/email-verification/request/", EmailVerificationRequestView.as_view(), name="account-email-verification-request"),
++    path("me/email-verification/resend/", EmailVerificationResendView.as_view(), name="account-email-verification-resend"),
++    path("me/email-verification/verify/", EmailVerificationVerifyView.as_view(), name="account-email-verification-verify"),
+     path("me/calculations/", MyCalculationsView.as_view(), name="account-calculations"),
+ ]
+diff -ru '--exclude=__pycache__' '--exclude=*.pyc' /mnt/data/be_deploy_fix/apps/accounts/views.py /mnt/data/backend_v159/apps/accounts/views.py
+--- /mnt/data/be_deploy_fix/apps/accounts/views.py	2026-09-19 20:25:26.000000000 +0000
++++ /mnt/data/backend_v159/apps/accounts/views.py	2026-09-20 00:36:25.360344322 +0000
+@@ -27,18 +27,25 @@
+     EmailSecurityUnavailable,
+     create_two_factor_challenge,
+     email_security_available,
++    is_user_email_verified,
+     mask_email,
++    normalize_email,
+     resend_two_factor_challenge,
+     send_password_reset_email,
+     verify_two_factor_challenge,
+ )
+ from .serializers import (
+     AuthResponseSerializer,
++    EmailVerificationChallengeSerializer,
++    EmailVerificationResendSerializer,
++    EmailVerificationStatusSerializer,
++    EmailVerificationVerifySerializer,
+     LoginResponseSerializer,
+     LogoutSerializer,
+     OwnedCalculationListSerializer,
+     PasswordChangeSerializer,
+     PasswordResetConfirmSerializer,
++    PasswordResetRequestResponseSerializer,
+     PasswordResetRequestSerializer,
+     RegisterSerializer,
+     TwoFactorDisableSerializer,
+@@ -62,6 +69,12 @@
+     default_code = "email_unavailable"
+ 
+ 
++class AccountEmailNotFound(APIException):
++    status_code = status.HTTP_404_NOT_FOUND
++    default_detail = "No active account is associated with this email address."
++    default_code = "account_email_not_found"
++
++
+ def _auth_payload(user):
+     refresh = RefreshToken.for_user(user)
+     return {
+@@ -82,6 +95,15 @@
+     }
+ 
+ 
++def _email_verification_payload(challenge):
++    return {
++        "challenge_id": challenge.challenge_id,
++        "expires_in": challenge.expires_in,
++        "resend_after": challenge.resend_after,
++        "masked_email": challenge.masked_email,
++    }
++
++
+ def _blacklist_all_tokens(user) -> None:
+     for token in OutstandingToken.objects.filter(user=user):
+         BlacklistedToken.objects.get_or_create(token=token)
+@@ -91,7 +113,17 @@
+     permission_classes = [AllowAny]
+     throttle_scope = "registration"
+ 
+-    @extend_schema(tags=["User Accounts"], request=RegisterSerializer, responses={201: AuthResponseSerializer, 400: ApiErrorSerializer})
++    @extend_schema(
++        tags=["User Accounts"],
++        operation_id="account_register",
++        summary="Register an optional user account",
++        description=(
++            "Creates an account and immediately issues JWTs. Email is optional and, when supplied, "
++            "does not need to be verified before normal sign-in or application use."
++        ),
++        request=RegisterSerializer,
++        responses={201: AuthResponseSerializer, 400: ApiErrorSerializer},
++    )
+     def post(self, request):
+         serializer = RegisterSerializer(data=request.data)
+         serializer.is_valid(raise_exception=True)
+@@ -140,12 +172,19 @@
+     permission_classes = [AllowAny]
+     throttle_scope = "two_factor"
+ 
+-    @extend_schema(tags=["User Accounts"], request=TwoFactorResendSerializer, responses={200: TwoFactorRequiredSerializer, 400: ApiErrorSerializer, 404: ApiErrorSerializer})
++    @extend_schema(tags=["User Accounts"], request=TwoFactorResendSerializer, responses={200: TwoFactorRequiredSerializer, 400: ApiErrorSerializer, 403: ApiErrorSerializer, 404: ApiErrorSerializer, 503: ApiErrorSerializer})
+     def post(self, request):
+         serializer = TwoFactorResendSerializer(data=request.data)
+         serializer.is_valid(raise_exception=True)
++        challenge_id = str(serializer.validated_data["challenge_id"])
+         try:
+-            challenge = resend_two_factor_challenge(str(serializer.validated_data["challenge_id"]))
++            existing = TwoFactorChallenge.objects.get(pk=challenge_id)
++        except TwoFactorChallenge.DoesNotExist as exc:
++            raise NotFound("This verification challenge was not found. Please sign in again.") from exc
++        if existing.purpose == TwoFactorChallenge.Purpose.VERIFY_EMAIL:
++            raise PermissionDenied("Use the authenticated email-verification resend endpoint for this challenge.")
++        try:
++            challenge = resend_two_factor_challenge(challenge_id)
+         except TwoFactorChallenge.DoesNotExist as exc:
+             raise NotFound("This verification challenge was not found. Please sign in again.") from exc
+         except RuntimeError as exc:
+@@ -161,7 +200,13 @@
+     permission_classes = [IsAuthenticated]
+     parser_classes = [JSONParser, MultiPartParser, FormParser]
+ 
+-    @extend_schema(tags=["User Accounts"], responses={200: UserSummarySerializer}, operation_id="account_profile_retrieve")
++    @extend_schema(
++        tags=["User Accounts"],
++        responses={200: UserSummarySerializer},
++        operation_id="account_profile_retrieve",
++        summary="Get the current user profile",
++        description="Includes optional email-verification and two-factor-authentication status.",
++    )
+     def get(self, request):
+         UserProfile.objects.get_or_create(user=request.user)
+         return Response(UserSummarySerializer(request.user).data)
+@@ -184,6 +229,7 @@
+             "enabled": profile.two_factor_enabled,
+             "email": request.user.email or "",
+             "masked_email": mask_email(request.user.email) if request.user.email else "",
++            "email_verified": is_user_email_verified(request.user, profile),
+             "email_configured": email_security_available(),
+         })
+ 
+@@ -192,7 +238,16 @@
+     permission_classes = [IsAuthenticated]
+     throttle_scope = "two_factor"
+ 
+-    @extend_schema(tags=["User Accounts"], request=TwoFactorEnableStartSerializer, responses={200: TwoFactorRequiredSerializer, 400: ApiErrorSerializer})
++    @extend_schema(
++        tags=["User Accounts"],
++        request=TwoFactorEnableStartSerializer,
++        responses={200: TwoFactorRequiredSerializer, 400: ApiErrorSerializer, 503: ApiErrorSerializer},
++        summary="Start optional two-factor authentication setup",
++        description=(
++            "Requires the current password and sends an OTP to the current account email. "
++            "Successfully verifying the setup OTP also marks that exact email address as verified."
++        ),
++    )
+     def post(self, request):
+         serializer = TwoFactorEnableStartSerializer(data=request.data, context={"request": request})
+         serializer.is_valid(raise_exception=True)
+@@ -210,7 +265,7 @@
+     permission_classes = [IsAuthenticated]
+     throttle_scope = "two_factor"
+ 
+-    @extend_schema(tags=["User Accounts"], request=TwoFactorEnableVerifySerializer, responses={200: UserSummarySerializer, 400: ApiErrorSerializer, 403: ApiErrorSerializer})
++    @extend_schema(tags=["User Accounts"], request=TwoFactorEnableVerifySerializer, responses={200: UserSummarySerializer, 400: ApiErrorSerializer, 403: ApiErrorSerializer, 404: ApiErrorSerializer})
+     def post(self, request):
+         serializer = TwoFactorEnableVerifySerializer(data=request.data)
+         serializer.is_valid(raise_exception=True)
+@@ -228,9 +283,17 @@
+             raise ValidationError({"code": [str(exc)]}) from exc
+         if challenge.user_id != request.user.id:
+             raise PermissionDenied("This verification challenge belongs to another account.")
++        current_email = normalize_email(request.user.email)
++        target_email = normalize_email(challenge.target_email)
++        if not current_email or current_email != target_email:
++            raise ValidationError({
++                "email": ["The account email changed after this verification code was issued. Start two-factor setup again."]
++            })
+         profile, _ = UserProfile.objects.get_or_create(user=request.user)
+         profile.two_factor_enabled = True
+-        profile.save(update_fields=["two_factor_enabled", "updated_at"])
++        profile.verified_email = current_email
++        profile.email_verified_at = timezone.now()
++        profile.save(update_fields=["two_factor_enabled", "verified_email", "email_verified_at", "updated_at"])
+         return Response(UserSummarySerializer(request.user).data)
+ 
+ 
+@@ -252,26 +315,170 @@
+         return Response(UserSummarySerializer(request.user).data)
+ 
+ 
++class EmailVerificationStatusView(APIView):
++    permission_classes = [IsAuthenticated]
++
++    @extend_schema(
++        tags=["User Accounts"],
++        operation_id="account_email_verification_status",
++        summary="Get email verification status",
++        description=(
++            "Email verification is optional. Registration and normal sign-in do not require a verified email. "
++            "This endpoint reports whether the authenticated user's current email address has been verified."
++        ),
++        responses={200: EmailVerificationStatusSerializer},
++    )
++    def get(self, request):
++        profile, _ = UserProfile.objects.get_or_create(user=request.user)
++        verified = is_user_email_verified(request.user, profile)
++        return Response({
++            "email": request.user.email or "",
++            "masked_email": mask_email(request.user.email) if request.user.email else "",
++            "verified": verified,
++            "verified_at": profile.email_verified_at if verified else None,
++            "email_configured": email_security_available(),
++        })
++
++
++class EmailVerificationRequestView(APIView):
++    permission_classes = [IsAuthenticated]
++    throttle_scope = "email_verification"
++
++    @extend_schema(
++        tags=["User Accounts"],
++        operation_id="account_email_verification_request",
++        summary="Send an email verification code",
++        description=(
++            "Sends a six-digit OTP to the authenticated user's current account email. "
++            "Email verification is optional and may be completed later from account settings."
++        ),
++        request=None,
++        responses={200: EmailVerificationChallengeSerializer, 400: ApiErrorSerializer, 503: ApiErrorSerializer},
++    )
++    def post(self, request):
++        profile, _ = UserProfile.objects.get_or_create(user=request.user)
++        if not request.user.email:
++            raise ValidationError({"email": ["Add an email address to your profile before requesting verification."]})
++        if is_user_email_verified(request.user, profile):
++            raise ValidationError({"email": ["This email address is already verified."]})
++        try:
++            challenge = create_two_factor_challenge(request.user, TwoFactorChallenge.Purpose.VERIFY_EMAIL)
++        except (EmailSecurityUnavailable, EmailDeliveryFailed) as exc:
++            raise EmailServiceUnavailable(str(exc)) from exc
++        return Response(_email_verification_payload(challenge))
++
++
++class EmailVerificationResendView(APIView):
++    permission_classes = [IsAuthenticated]
++    throttle_scope = "email_verification"
++
++    @extend_schema(
++        tags=["User Accounts"],
++        operation_id="account_email_verification_resend",
++        summary="Resend an email verification code",
++        request=EmailVerificationResendSerializer,
++        responses={200: EmailVerificationChallengeSerializer, 400: ApiErrorSerializer, 403: ApiErrorSerializer, 404: ApiErrorSerializer, 503: ApiErrorSerializer},
++    )
++    def post(self, request):
++        serializer = EmailVerificationResendSerializer(data=request.data)
++        serializer.is_valid(raise_exception=True)
++        challenge_id = str(serializer.validated_data["challenge_id"])
++        try:
++            existing = TwoFactorChallenge.objects.get(pk=challenge_id)
++        except TwoFactorChallenge.DoesNotExist as exc:
++            raise NotFound("This email verification challenge was not found. Please start again.") from exc
++        if existing.user_id != request.user.id or existing.purpose != TwoFactorChallenge.Purpose.VERIFY_EMAIL:
++            raise PermissionDenied("This verification challenge is not valid for this account action.")
++        try:
++            challenge = resend_two_factor_challenge(challenge_id)
++        except RuntimeError as exc:
++            raise ValidationError({"non_field_errors": [str(exc)]}) from exc
++        except ValueError as exc:
++            raise ValidationError({"non_field_errors": [str(exc)]}) from exc
++        except (EmailSecurityUnavailable, EmailDeliveryFailed) as exc:
++            raise EmailServiceUnavailable(str(exc)) from exc
++        return Response(_email_verification_payload(challenge))
++
++
++class EmailVerificationVerifyView(APIView):
++    permission_classes = [IsAuthenticated]
++    throttle_scope = "email_verification"
++
++    @extend_schema(
++        tags=["User Accounts"],
++        operation_id="account_email_verification_verify",
++        summary="Verify the account email",
++        description="Verifies only the exact email address to which the OTP challenge was sent.",
++        request=EmailVerificationVerifySerializer,
++        responses={200: UserSummarySerializer, 400: ApiErrorSerializer, 403: ApiErrorSerializer, 404: ApiErrorSerializer},
++    )
++    def post(self, request):
++        serializer = EmailVerificationVerifySerializer(data=request.data)
++        serializer.is_valid(raise_exception=True)
++        try:
++            challenge = verify_two_factor_challenge(
++                str(serializer.validated_data["challenge_id"]),
++                serializer.validated_data["code"],
++                {TwoFactorChallenge.Purpose.VERIFY_EMAIL},
++            )
++        except TwoFactorChallenge.DoesNotExist as exc:
++            raise NotFound("This email verification challenge was not found. Please start again.") from exc
++        except PermissionError as exc:
++            raise PermissionDenied(str(exc)) from exc
++        except ValueError as exc:
++            raise ValidationError({"code": [str(exc)]}) from exc
++
++        if challenge.user_id != request.user.id:
++            raise PermissionDenied("This verification challenge belongs to another account.")
++        current_email = normalize_email(request.user.email)
++        target_email = normalize_email(challenge.target_email)
++        if not current_email or current_email != target_email:
++            raise ValidationError({
++                "email": ["The account email changed after this verification code was issued. Request a new verification code."]
++            })
++
++        profile, _ = UserProfile.objects.get_or_create(user=request.user)
++        profile.verified_email = current_email
++        profile.email_verified_at = timezone.now()
++        profile.save(update_fields=["verified_email", "email_verified_at", "updated_at"])
++        return Response(UserSummarySerializer(request.user).data)
++
++
+ class PasswordResetRequestView(APIView):
+     permission_classes = [AllowAny]
+     throttle_scope = "password_reset"
+ 
+-    @extend_schema(tags=["User Accounts"], request=PasswordResetRequestSerializer, responses={200: OpenApiResponse(description="Generic reset-email response."), 503: ApiErrorSerializer})
++    @extend_schema(
++        tags=["User Accounts"],
++        operation_id="account_password_reset_request",
++        summary="Request a password reset",
++        description=(
++            "Sends a password-reset email only when the submitted address belongs to an active account. "
++            "Email verification is not required for password recovery. If no active account uses the address, "
++            "the API returns 404 and no email is sent."
++        ),
++        request=PasswordResetRequestSerializer,
++        responses={
++            200: PasswordResetRequestResponseSerializer,
++            400: ApiErrorSerializer,
++            404: ApiErrorSerializer,
++            503: ApiErrorSerializer,
++        },
++    )
+     def post(self, request):
+         serializer = PasswordResetRequestSerializer(data=request.data)
+         serializer.is_valid(raise_exception=True)
++        email = serializer.validated_data["email"]
++        user = User.objects.filter(email__iexact=email, is_active=True).order_by("pk").first()
++        if user is None:
++            raise AccountEmailNotFound()
+         if not email_security_available():
+             raise EmailServiceUnavailable()
+-        email = serializer.validated_data["email"].strip()
+-        users = list(User.objects.filter(email__iexact=email, is_active=True).order_by("pk"))
+         try:
+-            for user in users:
+-                send_password_reset_email(user)
++            send_password_reset_email(user)
+         except (EmailSecurityUnavailable, EmailDeliveryFailed) as exc:
+             raise EmailServiceUnavailable(str(exc)) from exc
+-        return Response({
+-            "detail": "If an active account uses that email address, a password reset link has been sent.",
+-        })
++        return Response({"detail": "Password reset email sent."})
+ 
+ 
+ class PasswordResetConfirmView(APIView):
+diff -ru '--exclude=__pycache__' '--exclude=*.pyc' /mnt/data/be_deploy_fix/config/settings/base.py /mnt/data/backend_v159/config/settings/base.py
+--- /mnt/data/be_deploy_fix/config/settings/base.py	2026-09-19 20:25:53.000000000 +0000
++++ /mnt/data/backend_v159/config/settings/base.py	2026-09-20 00:32:04.063788247 +0000
+@@ -177,6 +177,7 @@
+         "auth": "10/minute",
+         "registration": "5/hour",
+         "two_factor": "10/minute",
++        "email_verification": "5/hour",
+         "password_reset": "5/hour",
+     },
+ }
+@@ -194,9 +195,10 @@
+     "TITLE": "Smart Solar Battery Calculator API",
+     "DESCRIPTION": (
+         "Production API for Project N01. The original client MATLAB files are executed unchanged under GNU Octave. "
+-        "Retained input files and canonical CSV result artifacts are persisted in Supabase Storage; record metadata is persisted in PostgreSQL."
++        "Retained input files and canonical CSV result artifacts are persisted in Supabase Storage; record metadata is persisted in PostgreSQL. "
++        "Account email verification is optional; password reset requires an email address associated with an active account."
+     ),
+-    "VERSION": "1.5.8",
++    "VERSION": "1.5.9",
+     "SERVE_INCLUDE_SCHEMA": False,
+     "COMPONENT_SPLIT_REQUEST": True,
+     "SCHEMA_PATH_PREFIX": r"/api/v1",

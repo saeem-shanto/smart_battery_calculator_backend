@@ -1,10 +1,12 @@
 openapi: 3.0.3
 info:
   title: Smart Solar Battery Calculator API
-  version: 1.5.8
+  version: 1.5.9
   description: Production API for Project N01. The original client MATLAB files are
     executed unchanged under GNU Octave. Retained input files and canonical CSV result
     artifacts are persisted in Supabase Storage; record metadata is persisted in PostgreSQL.
+    Account email verification is optional; password reset requires an email address
+    associated with an active account.
 paths:
   /:
     get:
@@ -57,7 +59,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
           description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
         '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '503':
           content:
             application/json:
               schema:
@@ -133,7 +147,12 @@ paths:
           description: ''
   /api/v1/accounts/auth/password-reset/:
     post:
-      operationId: accounts_auth_password_reset_create
+      operationId: account_password_reset_request
+      description: Sends a password-reset email only when the submitted address belongs
+        to an active account. Email verification is not required for password recovery.
+        If no active account uses the address, the API returns 404 and no email is
+        sent.
+      summary: Request a password reset
       tags:
       - User Accounts
       requestBody:
@@ -153,7 +172,23 @@ paths:
       - {}
       responses:
         '200':
-          description: Generic reset-email response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordResetRequestResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
         '503':
           content:
             application/json:
@@ -246,6 +281,9 @@ paths:
   /api/v1/accounts/me/:
     get:
       operationId: account_profile_retrieve
+      description: Includes optional email-verification and two-factor-authentication
+        status.
+      summary: Get the current user profile
       tags:
       - User Accounts
       security:
@@ -336,6 +374,152 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedOwnedCalculationListList'
           description: ''
+  /api/v1/accounts/me/email-verification/:
+    get:
+      operationId: account_email_verification_status
+      description: Email verification is optional. Registration and normal sign-in
+        do not require a verified email. This endpoint reports whether the authenticated
+        user's current email address has been verified.
+      summary: Get email verification status
+      tags:
+      - User Accounts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailVerificationStatus'
+          description: ''
+  /api/v1/accounts/me/email-verification/request/:
+    post:
+      operationId: account_email_verification_request
+      description: Sends a six-digit OTP to the authenticated user's current account
+        email. Email verification is optional and may be completed later from account
+        settings.
+      summary: Send an email verification code
+      tags:
+      - User Accounts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailVerificationChallenge'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/accounts/me/email-verification/resend/:
+    post:
+      operationId: account_email_verification_resend
+      summary: Resend an email verification code
+      tags:
+      - User Accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailVerificationResendRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EmailVerificationResendRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EmailVerificationResendRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailVerificationChallenge'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+  /api/v1/accounts/me/email-verification/verify/:
+    post:
+      operationId: account_email_verification_verify
+      description: Verifies only the exact email address to which the OTP challenge
+        was sent.
+      summary: Verify the account email
+      tags:
+      - User Accounts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailVerificationVerifyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EmailVerificationVerifyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EmailVerificationVerifyRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummary'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
   /api/v1/accounts/me/password/:
     post:
       operationId: accounts_me_password_create
@@ -413,6 +597,10 @@ paths:
   /api/v1/accounts/me/two-factor/enable/:
     post:
       operationId: accounts_me_two_factor_enable_create
+      description: Requires the current password and sends an OTP to the current account
+        email. Successfully verifying the setup OTP also marks that exact email address
+        as verified.
+      summary: Start optional two-factor authentication setup
       tags:
       - User Accounts
       requestBody:
@@ -437,6 +625,12 @@ paths:
                 $ref: '#/components/schemas/TwoFactorRequired'
           description: ''
         '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
+        '503':
           content:
             application/json:
               schema:
@@ -480,9 +674,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
           description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+          description: ''
   /api/v1/accounts/register/:
     post:
-      operationId: accounts_register_create
+      operationId: account_register
+      description: Creates an account and immediately issues JWTs. Email is optional
+        and, when supplied, does not need to be verified before normal sign-in or
+        application use.
+      summary: Register an optional user account
       tags:
       - User Accounts
       requestBody:
@@ -2456,6 +2660,69 @@ components:
         * `load` - load
         * `pv` - pv
         * `combined` - combined
+    EmailVerificationChallenge:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        expires_in:
+          type: integer
+        resend_after:
+          type: integer
+        masked_email:
+          type: string
+      required:
+      - challenge_id
+      - expires_in
+      - masked_email
+      - resend_after
+    EmailVerificationResendRequest:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+      required:
+      - challenge_id
+    EmailVerificationStatus:
+      type: object
+      properties:
+        email:
+          oneOf:
+          - type: string
+            format: email
+          - type: string
+            maxLength: 0
+        masked_email:
+          type: string
+        verified:
+          type: boolean
+        verified_at:
+          type: string
+          format: date-time
+          nullable: true
+        email_configured:
+          type: boolean
+      required:
+      - email
+      - email_configured
+      - masked_email
+      - verified
+      - verified_at
+    EmailVerificationVerifyRequest:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          minLength: 1
+          pattern: ^\d{6}$
+      required:
+      - challenge_id
+      - code
     FeedbackCreateRequest:
       type: object
       properties:
@@ -2873,6 +3140,13 @@ components:
           maxLength: 254
       required:
       - email
+    PasswordResetRequestResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+      required:
+      - detail
     PatchedAdminCalculationRequest:
       type: object
       properties:
@@ -3339,11 +3613,14 @@ components:
             maxLength: 0
         masked_email:
           type: string
+        email_verified:
+          type: boolean
         email_configured:
           type: boolean
       required:
       - email
       - email_configured
+      - email_verified
       - enabled
       - masked_email
     TwoFactorVerifyRequest:
@@ -3396,9 +3673,19 @@ components:
         two_factor_enabled:
           type: boolean
           readOnly: true
+        email_verified:
+          type: boolean
+          readOnly: true
+        email_verified_at:
+          type: string
+          format: date-time
+          nullable: true
+          readOnly: true
       required:
       - avatar_download_path
       - email
+      - email_verified
+      - email_verified_at
       - first_name
       - id
       - is_staff

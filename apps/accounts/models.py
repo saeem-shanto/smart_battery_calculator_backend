@@ -29,6 +29,8 @@ class UserProfile(models.Model):
     )
     avatar = models.ImageField(upload_to=user_avatar_upload_to, max_length=500, blank=True)
     two_factor_enabled = models.BooleanField(default=False)
+    verified_email = models.EmailField(max_length=254, blank=True, default="")
+    email_verified_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -41,6 +43,7 @@ class TwoFactorChallenge(models.Model):
         LOGIN_USER = "login_user", "User login"
         LOGIN_ADMIN = "login_admin", "Admin login"
         ENABLE = "enable", "Enable two-factor authentication"
+        VERIFY_EMAIL = "verify_email", "Verify account email"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
@@ -49,6 +52,7 @@ class TwoFactorChallenge(models.Model):
         related_name="two_factor_challenges",
     )
     purpose = models.CharField(max_length=32, choices=Purpose.choices)
+    target_email = models.EmailField(max_length=254, blank=True, default="")
     code_digest = models.CharField(max_length=64, blank=True)
     expires_at = models.DateTimeField()
     last_sent_at = models.DateTimeField()
