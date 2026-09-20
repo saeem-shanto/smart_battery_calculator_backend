@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import os
 from pathlib import Path
 
 import dj_database_url
@@ -42,6 +43,7 @@ INSTALLED_APPS = [
     "apps.feedback",
     "apps.dashboard",
     "apps.octave",
+    "anymail",
 ]
 
 MIDDLEWARE = [
@@ -90,7 +92,9 @@ DATABASES = {
 }
 
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
+    },
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
@@ -203,17 +207,41 @@ SPECTACULAR_SETTINGS = {
     "COMPONENT_SPLIT_REQUEST": True,
     "SCHEMA_PATH_PREFIX": r"/api/v1",
     "TAGS": [
-        {"name": "System", "description": "Service liveness, readiness and API discovery."},
-        {"name": "Calculations", "description": "Legacy client-workbook calculations, stored artifacts and protected downloads."},
-        {"name": "User Accounts", "description": "Optional user registration, authentication, profile/avatar management and owned calculation history."},
-        {"name": "Profile Uploads", "description": "Validate and temporarily stage interval load/PV profiles."},
-        {"name": "Tariffs", "description": "Read available electricity tariff definitions."},
+        {email
+            "name": "System",
+            "description": "Service liveness, readiness and API discovery.",
+        },
+        {
+            "name": "Calculations",
+            "description": "Legacy client-workbook calculations, stored artifacts and protected downloads.",
+        },
+        {
+            "name": "User Accounts",
+            "description": "Optional user registration, authentication, profile/avatar management and owned calculation history.",
+        },
+        {
+            "name": "Profile Uploads",
+            "description": "Validate and temporarily stage interval load/PV profiles.",
+        },
+        {
+            "name": "Tariffs",
+            "description": "Read available electricity tariff definitions.",
+        },
         {"name": "Feedback", "description": "Public project feedback endpoints."},
-        {"name": "Admin Authentication", "description": "JWT authentication for staff/admin endpoints."},
-        {"name": "Admin Dashboard", "description": "Staff-only calculation audit, stored-file downloads and analytics."},
+        {
+            "name": "Admin Authentication",
+            "description": "JWT authentication for staff/admin endpoints.",
+        },
+        {
+            "name": "Admin Dashboard",
+            "description": "Staff-only calculation audit, stored-file downloads and analytics.",
+        },
         {"name": "Admin Tariffs", "description": "Staff-only tariff management."},
         {"name": "Admin Feedback", "description": "Staff-only feedback moderation."},
-        {"name": "GNU Octave diagnostics", "description": "Optional deployment/parity checks; disabled by default in production."},
+        {
+            "name": "GNU Octave diagnostics",
+            "description": "Optional deployment/parity checks; disabled by default in production.",
+        },
     ],
     "SWAGGER_UI_DIST": "SIDECAR",
     "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
@@ -234,14 +262,23 @@ SPECTACULAR_SETTINGS = {
 # Email-based account security (2FA + password reset)
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000").rstrip("/")
 ACCOUNT_EMAIL_ENABLED = env.bool("ACCOUNT_EMAIL_ENABLED", default=False)
-EMAIL_BACKEND = env("EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend")
+EMAIL_BACKEND = env(
+    "EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend"
+)
 EMAIL_HOST = env("EMAIL_HOST", default="smtp.gmail.com")
 EMAIL_PORT = env.int("EMAIL_PORT", default=587)
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
 EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="").strip()
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="").strip()
-DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default=EMAIL_HOST_USER or "Smart Battery Calculator <no-reply@example.invalid>")
+ANYMAIL = {
+    "RESEND_API_KEY": os.environ["RESEND_API_KEY"],
+}
+DEFAULT_FROM_EMAIL = env(
+    "DEFAULT_FROM_EMAIL",
+    default=EMAIL_HOST_USER or "Smart Battery Calculator <no-reply@example.invalid>",
+)
+
 EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=15)
 PASSWORD_RESET_TIMEOUT = env.int("PASSWORD_RESET_TIMEOUT_SECONDS", default=3600)
 TWO_FACTOR_OTP_TTL_SECONDS = env.int("TWO_FACTOR_OTP_TTL_SECONDS", default=600)
