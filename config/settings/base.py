@@ -207,7 +207,7 @@ SPECTACULAR_SETTINGS = {
     "COMPONENT_SPLIT_REQUEST": True,
     "SCHEMA_PATH_PREFIX": r"/api/v1",
     "TAGS": [
-        {email
+        {
             "name": "System",
             "description": "Service liveness, readiness and API discovery.",
         },
@@ -271,13 +271,15 @@ EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
 EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="").strip()
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="").strip()
-ANYMAIL = {
-    "RESEND_API_KEY": os.environ["RESEND_API_KEY"],
-}
 DEFAULT_FROM_EMAIL = env(
     "DEFAULT_FROM_EMAIL",
     default=EMAIL_HOST_USER or "Smart Battery Calculator <no-reply@example.invalid>",
 )
+RESEND_API_KEY = env("RESEND_API_KEY", default="").strip()
+
+ANYMAIL = {
+    "RESEND_API_KEY": RESEND_API_KEY,
+}
 
 EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=15)
 PASSWORD_RESET_TIMEOUT = env.int("PASSWORD_RESET_TIMEOUT_SECONDS", default=3600)
