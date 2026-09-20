@@ -6,6 +6,8 @@ class ApiErrorBodySerializer(serializers.Serializer):
     message = serializers.CharField()
     fields = serializers.JSONField(required=False, allow_null=True)
     request_id = serializers.CharField(required=False, allow_null=True)
+    retry_after_seconds = serializers.IntegerField(required=False)
+    retry_at = serializers.DateTimeField(required=False)
 
 
 class ApiErrorSerializer(serializers.Serializer):

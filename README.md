@@ -394,3 +394,12 @@ The backend:
 - does not blindly retry sends, avoiding accidental duplicate OTP/reset emails after ambiguous network failures;
 - validates Brevo configuration at production startup;
 - reports provider errors safely through the existing HTTP 503 email-security handling.
+
+
+## v1.8.2 security-email rate controls
+
+- Password-reset requests now return the same 200 response for existing and unknown emails.
+- Successful reset requests expose `resend_after_seconds` and `resend_available_at`.
+- Repeats inside the default 60-second cooldown return structured HTTP 429 plus `Retry-After`.
+- 2FA/email-verification sends and verification attempts use separate throttle buckets.
+- Run `python manage.py migrate` after upgrading because v1.8.2 adds `accounts.0004_security_email_cooldown`.

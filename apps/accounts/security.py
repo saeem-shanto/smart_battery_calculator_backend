@@ -5,20 +5,21 @@ import hmac
 import logging
 import secrets
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
+from math import ceil
 from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import EmailMultiAlternatives
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.encoding import force_bytes
 from django.utils.html import escape
 from django.utils.http import urlsafe_base64_encode
 
-from .models import TwoFactorChallenge, UserProfile
+from .models import SecurityEmailCooldown, TwoFactorChallenge, UserProfile
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -30,6 +31,15 @@ class EmailSecurityUnavailable(RuntimeError):
 
 class EmailDeliveryFailed(RuntimeError):
     pass
+
+
+class EmailCooldownActive(RuntimeError):
+    def __init__(self, retry_after_seconds: int, available_at):
+        self.retry_after_seconds = max(1, int(retry_after_seconds))
+        self.available_at = available_at
+        super().__init__(
+            f"Please wait {self.retry_after_seconds} seconds before requesting another email."
+        )
 
 
 def email_delivery_error_summary(exc: Exception) -> str:
@@ -89,6 +99,7 @@ class ChallengeResult:
     challenge_id: str
     expires_in: int
     resend_after: int
+    resend_available_at: datetime
     masked_email: str
     purpose: str
 
@@ -154,6 +165,65 @@ def mask_email(email: str) -> str:
 
 def normalize_email(email: str) -> str:
     return (email or "").strip().lower()
+
+
+def _security_target_hash(action: str, target: str) -> str:
+    normalized = normalize_email(target)
+    payload = f"{action}:{normalized}".encode("utf-8")
+    return hmac.new(settings.SECRET_KEY.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+
+
+def reserve_security_email_cooldown(
+    action: str, target: str, cooldown_seconds: int
+) -> tuple[SecurityEmailCooldown, datetime]:
+    """Atomically reserve a public email-security send slot.
+
+    The submitted address is HMACed before persistence so unknown-address
+    requests can receive exactly the same cooldown semantics as real accounts
+    without storing the raw address.
+    """
+
+    now = timezone.now()
+    cooldown_seconds = max(0, int(cooldown_seconds))
+    target_hash = _security_target_hash(action, target)
+
+    with transaction.atomic():
+        try:
+            row = SecurityEmailCooldown.objects.select_for_update().get(
+                action=action, target_hash=target_hash
+            )
+        except SecurityEmailCooldown.DoesNotExist:
+            try:
+                row = SecurityEmailCooldown.objects.create(
+                    action=action,
+                    target_hash=target_hash,
+                    last_requested_at=now,
+                )
+                return row, now + timedelta(seconds=cooldown_seconds)
+            except IntegrityError:
+                row = SecurityEmailCooldown.objects.select_for_update().get(
+                    action=action, target_hash=target_hash
+                )
+
+        available_at = row.last_requested_at + timedelta(seconds=cooldown_seconds)
+        if cooldown_seconds and now < available_at:
+            wait = max(1, ceil((available_at - now).total_seconds()))
+            raise EmailCooldownActive(wait, available_at)
+
+        row.last_requested_at = now
+        row.save(update_fields=["last_requested_at", "updated_at"])
+        return row, now + timedelta(seconds=cooldown_seconds)
+
+
+def release_security_email_cooldown(
+    row: SecurityEmailCooldown, reserved_at: datetime
+) -> None:
+    """Release a reservation after provider failure without racing a newer request."""
+
+    SecurityEmailCooldown.objects.filter(
+        pk=row.pk,
+        last_requested_at=reserved_at,
+    ).delete()
 
 
 def is_user_email_verified(user, profile: UserProfile | None = None) -> bool:
@@ -246,6 +316,23 @@ def create_two_factor_challenge(user, purpose: str) -> ChallengeResult:
     code = _new_code()
 
     with transaction.atomic():
+        active = (
+            TwoFactorChallenge.objects.select_for_update()
+            .filter(
+                user=user,
+                purpose=purpose,
+                consumed_at__isnull=True,
+                expires_at__gt=now,
+            )
+            .order_by("-last_sent_at")
+            .first()
+        )
+        if active is not None:
+            available_at = active.last_sent_at + timedelta(seconds=resend_after)
+            if resend_after and now < available_at:
+                wait = max(1, ceil((available_at - now).total_seconds()))
+                raise EmailCooldownActive(wait, available_at)
+
         TwoFactorChallenge.objects.select_for_update().filter(
             user=user,
             purpose=purpose,
@@ -272,6 +359,7 @@ def create_two_factor_challenge(user, purpose: str) -> ChallengeResult:
         challenge_id=str(challenge.id),
         expires_in=ttl_seconds,
         resend_after=resend_after,
+        resend_available_at=challenge.last_sent_at + timedelta(seconds=resend_after),
         masked_email=mask_email(target_email),
         purpose=purpose,
     )
@@ -286,10 +374,10 @@ def resend_two_factor_challenge(challenge_id: str) -> ChallengeResult:
         challenge = TwoFactorChallenge.objects.select_for_update().select_related("user").get(pk=challenge_id)
         if challenge.consumed_at is not None or challenge.expires_at <= now:
             raise ValueError("This verification challenge has expired. Please sign in again.")
-        elapsed = (now - challenge.last_sent_at).total_seconds()
-        if elapsed < resend_after:
-            wait = max(1, int(resend_after - elapsed))
-            raise RuntimeError(f"Please wait {wait} seconds before requesting another code.")
+        available_at = challenge.last_sent_at + timedelta(seconds=resend_after)
+        if resend_after and now < available_at:
+            wait = max(1, ceil((available_at - now).total_seconds()))
+            raise EmailCooldownActive(wait, available_at)
         code = _new_code()
         challenge.code_digest = _otp_digest(str(challenge.id), code)
         challenge.expires_at = now + timedelta(seconds=ttl_seconds)
@@ -311,6 +399,7 @@ def resend_two_factor_challenge(challenge_id: str) -> ChallengeResult:
         challenge_id=str(challenge.id),
         expires_in=ttl_seconds,
         resend_after=resend_after,
+        resend_available_at=challenge.last_sent_at + timedelta(seconds=resend_after),
         masked_email=mask_email(target_email),
         purpose=challenge.purpose,
     )

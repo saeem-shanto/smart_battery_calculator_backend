@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import mimetypes
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.http import FileResponse, Http404
 from django.utils import timezone
@@ -21,9 +22,10 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from apps.calculations.models import Calculation
 from apps.common.api_serializers import ApiErrorSerializer
 
-from .exceptions import AccountEmailNotFound, EmailServiceUnavailable
-from .models import TwoFactorChallenge, UserProfile
+from .exceptions import EmailServiceUnavailable, ResendCooldown
+from .models import SecurityEmailCooldown, TwoFactorChallenge, UserProfile
 from .security import (
+    EmailCooldownActive,
     EmailDeliveryFailed,
     EmailSecurityUnavailable,
     create_two_factor_challenge,
@@ -31,6 +33,8 @@ from .security import (
     is_user_email_verified,
     mask_email,
     normalize_email,
+    release_security_email_cooldown,
+    reserve_security_email_cooldown,
     resend_two_factor_challenge,
     send_password_reset_email,
     verify_two_factor_challenge,
@@ -80,6 +84,8 @@ def _challenge_payload(challenge):
         "challenge_id": challenge.challenge_id,
         "expires_in": challenge.expires_in,
         "resend_after": challenge.resend_after,
+        "resend_available_in": challenge.resend_after,
+        "resend_available_at": challenge.resend_available_at,
         "masked_email": challenge.masked_email,
     }
 
@@ -89,6 +95,8 @@ def _email_verification_payload(challenge):
         "challenge_id": challenge.challenge_id,
         "expires_in": challenge.expires_in,
         "resend_after": challenge.resend_after,
+        "resend_available_in": challenge.resend_after,
+        "resend_available_at": challenge.resend_available_at,
         "masked_email": challenge.masked_email,
     }
 
@@ -126,6 +134,7 @@ class RegisterView(APIView):
         200: LoginResponseSerializer,
         400: ApiErrorSerializer,
         401: ApiErrorSerializer,
+        429: ApiErrorSerializer,
         503: ApiErrorSerializer,
     },
 )
@@ -141,7 +150,7 @@ class UserTokenRefreshView(TokenRefreshView):
 
 class TwoFactorVerifyView(APIView):
     permission_classes = [AllowAny]
-    throttle_scope = "two_factor"
+    throttle_scope = "two_factor_verify"
 
     @extend_schema(tags=["User Accounts"], request=TwoFactorVerifySerializer, responses={200: AuthResponseSerializer, 400: ApiErrorSerializer, 403: ApiErrorSerializer})
     def post(self, request):
@@ -167,9 +176,9 @@ class TwoFactorVerifyView(APIView):
 
 class TwoFactorResendView(APIView):
     permission_classes = [AllowAny]
-    throttle_scope = "two_factor"
+    throttle_scope = "two_factor_send"
 
-    @extend_schema(tags=["User Accounts"], request=TwoFactorResendSerializer, responses={200: TwoFactorRequiredSerializer, 400: ApiErrorSerializer, 403: ApiErrorSerializer, 404: ApiErrorSerializer, 503: ApiErrorSerializer})
+    @extend_schema(tags=["User Accounts"], request=TwoFactorResendSerializer, responses={200: TwoFactorRequiredSerializer, 400: ApiErrorSerializer, 403: ApiErrorSerializer, 404: ApiErrorSerializer, 429: ApiErrorSerializer, 503: ApiErrorSerializer})
     def post(self, request):
         serializer = TwoFactorResendSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -184,8 +193,12 @@ class TwoFactorResendView(APIView):
             challenge = resend_two_factor_challenge(challenge_id)
         except TwoFactorChallenge.DoesNotExist as exc:
             raise NotFound("This verification challenge was not found. Please sign in again.") from exc
-        except RuntimeError as exc:
-            raise ValidationError({"non_field_errors": [str(exc)]}) from exc
+        except EmailCooldownActive as exc:
+            raise ResendCooldown(
+                exc.retry_after_seconds,
+                exc.available_at,
+                code="two_factor_resend_cooldown",
+            ) from exc
         except ValueError as exc:
             raise ValidationError({"non_field_errors": [str(exc)]}) from exc
         except (EmailSecurityUnavailable, EmailDeliveryFailed) as exc:
@@ -233,12 +246,12 @@ class TwoFactorStatusView(APIView):
 
 class TwoFactorEnableStartView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_scope = "two_factor"
+    throttle_scope = "two_factor_send"
 
     @extend_schema(
         tags=["User Accounts"],
         request=TwoFactorEnableStartSerializer,
-        responses={200: TwoFactorRequiredSerializer, 400: ApiErrorSerializer, 503: ApiErrorSerializer},
+        responses={200: TwoFactorRequiredSerializer, 400: ApiErrorSerializer, 429: ApiErrorSerializer, 503: ApiErrorSerializer},
         summary="Start optional two-factor authentication setup",
         description=(
             "Requires the current password and sends an OTP to the current account email. "
@@ -253,6 +266,12 @@ class TwoFactorEnableStartView(APIView):
             raise ValidationError({"non_field_errors": ["Two-factor authentication is already enabled."]})
         try:
             challenge = create_two_factor_challenge(request.user, TwoFactorChallenge.Purpose.ENABLE)
+        except EmailCooldownActive as exc:
+            raise ResendCooldown(
+                exc.retry_after_seconds,
+                exc.available_at,
+                code="two_factor_send_cooldown",
+            ) from exc
         except (EmailSecurityUnavailable, EmailDeliveryFailed) as exc:
             raise EmailServiceUnavailable(str(exc)) from exc
         return Response(_challenge_payload(challenge))
@@ -260,7 +279,7 @@ class TwoFactorEnableStartView(APIView):
 
 class TwoFactorEnableVerifyView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_scope = "two_factor"
+    throttle_scope = "two_factor_verify"
 
     @extend_schema(tags=["User Accounts"], request=TwoFactorEnableVerifySerializer, responses={200: UserSummarySerializer, 400: ApiErrorSerializer, 403: ApiErrorSerializer, 404: ApiErrorSerializer})
     def post(self, request):
@@ -296,7 +315,7 @@ class TwoFactorEnableVerifyView(APIView):
 
 class TwoFactorDisableView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_scope = "two_factor"
+    throttle_scope = "auth"
 
     @extend_schema(tags=["User Accounts"], request=TwoFactorDisableSerializer, responses={200: UserSummarySerializer, 400: ApiErrorSerializer})
     def post(self, request):
@@ -339,7 +358,7 @@ class EmailVerificationStatusView(APIView):
 
 class EmailVerificationRequestView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_scope = "email_verification"
+    throttle_scope = "email_verification_send"
 
     @extend_schema(
         tags=["User Accounts"],
@@ -350,7 +369,7 @@ class EmailVerificationRequestView(APIView):
             "Email verification is optional and may be completed later from account settings."
         ),
         request=None,
-        responses={200: EmailVerificationChallengeSerializer, 400: ApiErrorSerializer, 503: ApiErrorSerializer},
+        responses={200: EmailVerificationChallengeSerializer, 400: ApiErrorSerializer, 429: ApiErrorSerializer, 503: ApiErrorSerializer},
     )
     def post(self, request):
         profile, _ = UserProfile.objects.get_or_create(user=request.user)
@@ -360,6 +379,12 @@ class EmailVerificationRequestView(APIView):
             raise ValidationError({"email": ["This email address is already verified."]})
         try:
             challenge = create_two_factor_challenge(request.user, TwoFactorChallenge.Purpose.VERIFY_EMAIL)
+        except EmailCooldownActive as exc:
+            raise ResendCooldown(
+                exc.retry_after_seconds,
+                exc.available_at,
+                code="email_verification_send_cooldown",
+            ) from exc
         except (EmailSecurityUnavailable, EmailDeliveryFailed) as exc:
             raise EmailServiceUnavailable(str(exc)) from exc
         return Response(_email_verification_payload(challenge))
@@ -367,14 +392,14 @@ class EmailVerificationRequestView(APIView):
 
 class EmailVerificationResendView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_scope = "email_verification"
+    throttle_scope = "email_verification_send"
 
     @extend_schema(
         tags=["User Accounts"],
         operation_id="account_email_verification_resend",
         summary="Resend an email verification code",
         request=EmailVerificationResendSerializer,
-        responses={200: EmailVerificationChallengeSerializer, 400: ApiErrorSerializer, 403: ApiErrorSerializer, 404: ApiErrorSerializer, 503: ApiErrorSerializer},
+        responses={200: EmailVerificationChallengeSerializer, 400: ApiErrorSerializer, 403: ApiErrorSerializer, 404: ApiErrorSerializer, 429: ApiErrorSerializer, 503: ApiErrorSerializer},
     )
     def post(self, request):
         serializer = EmailVerificationResendSerializer(data=request.data)
@@ -388,8 +413,12 @@ class EmailVerificationResendView(APIView):
             raise PermissionDenied("This verification challenge is not valid for this account action.")
         try:
             challenge = resend_two_factor_challenge(challenge_id)
-        except RuntimeError as exc:
-            raise ValidationError({"non_field_errors": [str(exc)]}) from exc
+        except EmailCooldownActive as exc:
+            raise ResendCooldown(
+                exc.retry_after_seconds,
+                exc.available_at,
+                code="email_verification_resend_cooldown",
+            ) from exc
         except ValueError as exc:
             raise ValidationError({"non_field_errors": [str(exc)]}) from exc
         except (EmailSecurityUnavailable, EmailDeliveryFailed) as exc:
@@ -399,7 +428,7 @@ class EmailVerificationResendView(APIView):
 
 class EmailVerificationVerifyView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_scope = "email_verification"
+    throttle_scope = "email_verification_verify"
 
     @extend_schema(
         tags=["User Accounts"],
@@ -443,22 +472,22 @@ class EmailVerificationVerifyView(APIView):
 
 class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
-    throttle_scope = "password_reset"
+    throttle_scope = "password_reset_request"
 
     @extend_schema(
         tags=["User Accounts"],
         operation_id="account_password_reset_request",
         summary="Request a password reset",
         description=(
-            "Sends a password-reset email only when the submitted address belongs to an active account. "
-            "Email verification is not required for password recovery. If no active account uses the address, "
-            "the API returns 404 and no email is sent."
+            "Requests a password-reset email. The response is intentionally identical for existing and "
+            "non-existing accounts to prevent account enumeration. A target address may request another "
+            "reset email after the configured resend cooldown (60 seconds by default)."
         ),
         request=PasswordResetRequestSerializer,
         responses={
             200: PasswordResetRequestResponseSerializer,
             400: ApiErrorSerializer,
-            404: ApiErrorSerializer,
+            429: ApiErrorSerializer,
             503: ApiErrorSerializer,
         },
     )
@@ -466,21 +495,46 @@ class PasswordResetRequestView(APIView):
         serializer = PasswordResetRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         email = serializer.validated_data["email"]
-        user = User.objects.filter(email__iexact=email, is_active=True).order_by("pk").first()
-        if user is None:
-            raise AccountEmailNotFound()
         if not email_security_available():
             raise EmailServiceUnavailable()
+
+        resend_after = int(getattr(settings, "PASSWORD_RESET_RESEND_SECONDS", 60))
         try:
-            send_password_reset_email(user)
-        except (EmailSecurityUnavailable, EmailDeliveryFailed) as exc:
-            raise EmailServiceUnavailable(str(exc)) from exc
-        return Response({"detail": "Password reset email sent."})
+            cooldown_row, resend_available_at = reserve_security_email_cooldown(
+                SecurityEmailCooldown.Action.PASSWORD_RESET,
+                email,
+                resend_after,
+            )
+        except EmailCooldownActive as exc:
+            raise ResendCooldown(
+                exc.retry_after_seconds,
+                exc.available_at,
+                code="password_reset_cooldown",
+            ) from exc
+
+        user = User.objects.filter(email__iexact=email, is_active=True).order_by("pk").first()
+        if user is not None:
+            reserved_at = cooldown_row.last_requested_at
+            try:
+                send_password_reset_email(user)
+            except (EmailSecurityUnavailable, EmailDeliveryFailed) as exc:
+                release_security_email_cooldown(cooldown_row, reserved_at)
+                raise EmailServiceUnavailable(str(exc)) from exc
+
+        return Response(
+            {
+                "detail": (
+                    "If an active account exists for this email, a password reset link has been sent."
+                ),
+                "resend_after_seconds": resend_after,
+                "resend_available_at": resend_available_at,
+            }
+        )
 
 
 class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
-    throttle_scope = "password_reset"
+    throttle_scope = "password_reset_confirm"
 
     @extend_schema(tags=["User Accounts"], request=PasswordResetConfirmSerializer, responses={204: None, 400: ApiErrorSerializer})
     def post(self, request):

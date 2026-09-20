@@ -70,6 +70,39 @@ class TwoFactorChallenge(models.Model):
         return f"{self.purpose} challenge for {self.user_id}"
 
 
+class SecurityEmailCooldown(models.Model):
+    """Privacy-preserving cooldown state for public email-security endpoints.
+
+    Only an HMAC digest of the normalized target address is stored, never the
+    submitted email itself. This lets password-reset requests apply the same
+    cooldown to existing and non-existing accounts without enabling account
+    enumeration through response timing/status differences.
+    """
+
+    class Action(models.TextChoices):
+        PASSWORD_RESET = "password_reset", "Password reset"
+
+    action = models.CharField(max_length=32, choices=Action.choices)
+    target_hash = models.CharField(max_length=64)
+    last_requested_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["action", "target_hash"],
+                name="accounts_sec_email_unique",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["updated_at"], name="accounts_sec_email_updated_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.action} cooldown {self.target_hash[:8]}…"
+
+
 def _delete_storage_name(field, name: str) -> None:
     if not name:
         return

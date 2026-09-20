@@ -5,9 +5,9 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from apps.accounts.exceptions import EmailServiceUnavailable
+from apps.accounts.exceptions import EmailServiceUnavailable, ResendCooldown
 from apps.accounts.models import TwoFactorChallenge, UserProfile
-from apps.accounts.security import EmailDeliveryFailed, EmailSecurityUnavailable, create_two_factor_challenge
+from apps.accounts.security import EmailCooldownActive, EmailDeliveryFailed, EmailSecurityUnavailable, create_two_factor_challenge
 from apps.accounts.serializers import LoginResponseSerializer, UserSummarySerializer
 from apps.common.api_serializers import ApiErrorSerializer
 
@@ -34,6 +34,12 @@ class AdminTokenObtainPairSerializer(TokenObtainPairSerializer):
                 raise serializers.ValidationError({"email": "Two-factor authentication requires an email address on this account."})
             try:
                 challenge = create_two_factor_challenge(user, TwoFactorChallenge.Purpose.LOGIN_ADMIN)
+            except EmailCooldownActive as exc:
+                raise ResendCooldown(
+                    exc.retry_after_seconds,
+                    exc.available_at,
+                    code="two_factor_send_cooldown",
+                ) from exc
             except (EmailSecurityUnavailable, EmailDeliveryFailed) as exc:
                 raise EmailServiceUnavailable(str(exc)) from exc
             return {
@@ -41,6 +47,8 @@ class AdminTokenObtainPairSerializer(TokenObtainPairSerializer):
                 "challenge_id": challenge.challenge_id,
                 "expires_in": challenge.expires_in,
                 "resend_after": challenge.resend_after,
+                "resend_available_in": challenge.resend_after,
+                "resend_available_at": challenge.resend_available_at,
                 "masked_email": challenge.masked_email,
             }
 
@@ -59,6 +67,7 @@ class AdminTokenObtainPairSerializer(TokenObtainPairSerializer):
         200: LoginResponseSerializer,
         400: ApiErrorSerializer,
         401: ApiErrorSerializer,
+        429: ApiErrorSerializer,
         503: ApiErrorSerializer,
     },
 )

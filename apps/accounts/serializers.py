@@ -18,9 +18,10 @@ from apps.calculations.artifact_access import calculation_artifacts
 from apps.calculations.models import Calculation
 from apps.calculations.serializers import CalculationFileSerializer
 
-from .exceptions import EmailServiceUnavailable
+from .exceptions import EmailServiceUnavailable, ResendCooldown
 from .models import TwoFactorChallenge, UserProfile
 from .security import (
+    EmailCooldownActive,
     EmailDeliveryFailed,
     EmailSecurityUnavailable,
     create_two_factor_challenge,
@@ -103,6 +104,8 @@ class TwoFactorRequiredSerializer(serializers.Serializer):
     challenge_id = serializers.UUIDField()
     expires_in = serializers.IntegerField()
     resend_after = serializers.IntegerField()
+    resend_available_in = serializers.IntegerField()
+    resend_available_at = serializers.DateTimeField()
     masked_email = serializers.CharField()
 
 
@@ -111,6 +114,8 @@ class LoginResponseSerializer(serializers.Serializer):
     challenge_id = serializers.UUIDField(required=False)
     expires_in = serializers.IntegerField(required=False)
     resend_after = serializers.IntegerField(required=False)
+    resend_available_in = serializers.IntegerField(required=False)
+    resend_available_at = serializers.DateTimeField(required=False)
     masked_email = serializers.CharField(required=False)
     access = serializers.CharField(required=False)
     refresh = serializers.CharField(required=False)
@@ -178,6 +183,12 @@ class UserTokenObtainPairSerializer(TokenObtainPairSerializer):
                 raise serializers.ValidationError({"email": "Two-factor authentication requires an email address on this account."})
             try:
                 challenge = create_two_factor_challenge(user, TwoFactorChallenge.Purpose.LOGIN_USER)
+            except EmailCooldownActive as exc:
+                raise ResendCooldown(
+                    exc.retry_after_seconds,
+                    exc.available_at,
+                    code="two_factor_send_cooldown",
+                ) from exc
             except (EmailSecurityUnavailable, EmailDeliveryFailed) as exc:
                 raise EmailServiceUnavailable(str(exc)) from exc
             return {
@@ -185,6 +196,8 @@ class UserTokenObtainPairSerializer(TokenObtainPairSerializer):
                 "challenge_id": challenge.challenge_id,
                 "expires_in": challenge.expires_in,
                 "resend_after": challenge.resend_after,
+                "resend_available_in": challenge.resend_after,
+                "resend_available_at": challenge.resend_available_at,
                 "masked_email": challenge.masked_email,
             }
         refresh = self.get_token(user)
@@ -255,6 +268,8 @@ class EmailVerificationChallengeSerializer(serializers.Serializer):
     challenge_id = serializers.UUIDField()
     expires_in = serializers.IntegerField()
     resend_after = serializers.IntegerField()
+    resend_available_in = serializers.IntegerField()
+    resend_available_at = serializers.DateTimeField()
     masked_email = serializers.CharField()
 
 
@@ -275,6 +290,8 @@ class PasswordResetRequestSerializer(serializers.Serializer):
 
 class PasswordResetRequestResponseSerializer(serializers.Serializer):
     detail = serializers.CharField()
+    resend_after_seconds = serializers.IntegerField()
+    resend_available_at = serializers.DateTimeField()
 
 
 class PasswordResetConfirmSerializer(serializers.Serializer):

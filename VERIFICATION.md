@@ -62,3 +62,8 @@ GET /api/docs/
 ```
 
 See `BREVO_API_SETUP.md` for direct provider testing outside Django.
+
+
+## v1.8.2 checks
+
+After upgrading, run `python manage.py migrate`, `python manage.py check`, and `python manage.py test`. Verify a password-reset request returns `resend_after_seconds: 60`; an immediate repeat should return HTTP 429 with `error.code=password_reset_cooldown`, `retry_after_seconds`, `retry_at`, and a matching `Retry-After` header.

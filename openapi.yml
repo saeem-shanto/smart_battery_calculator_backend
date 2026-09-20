@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Smart Solar Battery Calculator API
-  version: 1.8.0
+  version: 1.8.2
   description: Production API for Project N01. The original client MATLAB files are
     executed unchanged under GNU Octave. Retained input files and canonical CSV result
     artifacts are persisted in Supabase Storage; record metadata is persisted in PostgreSQL.
@@ -65,7 +65,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
           description: ''
-        '404':
+        '429':
           content:
             application/json:
               schema:
@@ -148,10 +148,10 @@ paths:
   /api/v1/accounts/auth/password-reset/:
     post:
       operationId: account_password_reset_request
-      description: Sends a password-reset email only when the submitted address belongs
-        to an active account. Email verification is not required for password recovery.
-        If no active account uses the address, the API returns 404 and no email is
-        sent.
+      description: Requests a password-reset email. The response is intentionally identical
+        for existing and non-existing accounts to prevent account enumeration. A target
+        address may request another reset email after the configured resend cooldown
+        (60 seconds by default).
       summary: Request a password reset
       tags:
       - User Accounts
@@ -2271,6 +2271,11 @@ components:
         request_id:
           type: string
           nullable: true
+        retry_after_seconds:
+          type: integer
+        retry_at:
+          type: string
+          format: date-time
       required:
       - code
       - message
@@ -2707,6 +2712,11 @@ components:
           type: integer
         resend_after:
           type: integer
+        resend_available_in:
+          type: integer
+        resend_available_at:
+          type: string
+          format: date-time
         masked_email:
           type: string
       required:
@@ -2714,6 +2724,8 @@ components:
       - expires_in
       - masked_email
       - resend_after
+      - resend_available_at
+      - resend_available_in
     EmailVerificationResendRequest:
       type: object
       properties:
@@ -2851,6 +2863,11 @@ components:
           type: integer
         resend_after:
           type: integer
+        resend_available_in:
+          type: integer
+        resend_available_at:
+          type: string
+          format: date-time
         masked_email:
           type: string
         access:
@@ -3182,8 +3199,15 @@ components:
       properties:
         detail:
           type: string
+        resend_after_seconds:
+          type: integer
+        resend_available_at:
+          type: string
+          format: date-time
       required:
       - detail
+      - resend_after_seconds
+      - resend_available_at
     PatchedAdminCalculationRequest:
       type: object
       properties:
@@ -3622,6 +3646,11 @@ components:
           type: integer
         resend_after:
           type: integer
+        resend_available_in:
+          type: integer
+        resend_available_at:
+          type: string
+          format: date-time
         masked_email:
           type: string
       required:
@@ -3629,6 +3658,8 @@ components:
       - expires_in
       - masked_email
       - resend_after
+      - resend_available_at
+      - resend_available_in
     TwoFactorResendRequest:
       type: object
       properties:

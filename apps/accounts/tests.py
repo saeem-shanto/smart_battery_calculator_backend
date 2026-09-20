@@ -319,6 +319,25 @@ class EmailSecurityApiTests(TestCase):
         self.assertEqual(disable.status_code, 200, disable.data)
         self.assertFalse(disable.data["two_factor_enabled"])
 
+    @override_settings(TWO_FACTOR_OTP_RESEND_SECONDS=60)
+    def test_two_factor_resend_cooldown_returns_429_with_retry_metadata(self):
+        self._create_2fa_user(username="twofactor-cooldown")
+        login = self.client.post(
+            "/api/v1/accounts/auth/token/",
+            {"username": "twofactor-cooldown", "password": self.password},
+            format="json",
+        )
+        self.assertEqual(login.status_code, 200, login.data)
+        resend = self.client.post(
+            "/api/v1/accounts/auth/2fa/resend/",
+            {"challenge_id": login.data["challenge_id"]},
+            format="json",
+        )
+        self.assertEqual(resend.status_code, 429, resend.data)
+        self.assertEqual(resend.data["error"]["code"], "two_factor_resend_cooldown")
+        self.assertGreater(resend.data["error"]["retry_after_seconds"], 0)
+        self.assertIn("retry_at", resend.data["error"])
+
     def test_password_reset_email_changes_password(self):
         from urllib.parse import parse_qs, urlparse
         import re
@@ -349,14 +368,16 @@ class EmailSecurityApiTests(TestCase):
         user.refresh_from_db()
         self.assertTrue(user.check_password(new_password))
 
-    def test_password_reset_request_rejects_email_without_active_account(self):
+    def test_password_reset_request_returns_generic_success_for_unknown_email(self):
         response = self.client.post(
             "/api/v1/accounts/auth/password-reset/",
             {"email": "missing@example.com"},
             format="json",
         )
-        self.assertEqual(response.status_code, 404, response.data)
-        self.assertEqual(response.data["error"]["code"], "account_email_not_found")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIn("If an active account exists", response.data["detail"])
+        self.assertIn("resend_after_seconds", response.data)
+        self.assertIn("resend_available_at", response.data)
         self.assertEqual(len(self.mail.outbox), 0)
 
     def test_password_reset_does_not_require_verified_email(self):
@@ -371,8 +392,55 @@ class EmailSecurityApiTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(response.data["detail"], "Password reset email sent.")
+        self.assertIn("If an active account exists", response.data["detail"])
         self.assertEqual(len(self.mail.outbox), 1)
+
+    @override_settings(PASSWORD_RESET_RESEND_SECONDS=60)
+    def test_password_reset_resend_cooldown_returns_429_with_retry_metadata(self):
+        user = self.User.objects.create_user(
+            username="reset-cooldown",
+            email="reset-cooldown@example.com",
+            password=self.password,
+        )
+        first = self.client.post(
+            "/api/v1/accounts/auth/password-reset/",
+            {"email": user.email},
+            format="json",
+        )
+        self.assertEqual(first.status_code, 200, first.data)
+        self.assertEqual(first.data["resend_after_seconds"], 60)
+        self.assertIn("resend_available_at", first.data)
+
+        second = self.client.post(
+            "/api/v1/accounts/auth/password-reset/",
+            {"email": user.email},
+            format="json",
+        )
+        self.assertEqual(second.status_code, 429, second.data)
+        self.assertEqual(second.data["error"]["code"], "password_reset_cooldown")
+        self.assertGreater(second.data["error"]["retry_after_seconds"], 0)
+        self.assertLessEqual(second.data["error"]["retry_after_seconds"], 60)
+        self.assertIn("retry_at", second.data["error"])
+        self.assertEqual(second["Retry-After"], str(second.data["error"]["retry_after_seconds"]))
+        self.assertEqual(len(self.mail.outbox), 1)
+
+    @override_settings(PASSWORD_RESET_RESEND_SECONDS=60)
+    def test_unknown_email_uses_same_password_reset_cooldown(self):
+        email = "unknown-cooldown@example.com"
+        first = self.client.post(
+            "/api/v1/accounts/auth/password-reset/",
+            {"email": email},
+            format="json",
+        )
+        self.assertEqual(first.status_code, 200, first.data)
+        second = self.client.post(
+            "/api/v1/accounts/auth/password-reset/",
+            {"email": email},
+            format="json",
+        )
+        self.assertEqual(second.status_code, 429, second.data)
+        self.assertEqual(second.data["error"]["code"], "password_reset_cooldown")
+        self.assertEqual(len(self.mail.outbox), 0)
 
     def test_user_can_verify_email_later_and_profile_exposes_status(self):
         import re

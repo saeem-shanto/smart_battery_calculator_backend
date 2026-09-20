@@ -75,3 +75,8 @@ This build preserves the client MATLAB source and the v1.5 frontend calculation 
 - `matlab_source/rpresults.m`
 - Fixed legacy algorithm constants (5 kW PV, retail 0.3773, FiT 0.124, battery annual rate 50, 0-50 kWh search range)
 - Existing fixed-frontend endpoints for validation, calculation, calculation-token access and admin dashboard
+
+
+## v1.8.2 — password-reset and OTP throttle refinement
+
+Public password reset no longer exposes account existence via HTTP 404. A privacy-preserving HMAC-keyed cooldown record applies the same 60-second resend timer to known and unknown addresses. OTP send and verify traffic now use separate DRF scopes, and all cooldown 429 responses include retry metadata and the HTTP `Retry-After` header.

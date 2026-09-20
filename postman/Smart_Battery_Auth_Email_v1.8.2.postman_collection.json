@@ -1,0 +1,154 @@
+{
+  "info": {
+    "name": "Smart Battery Auth & Email Security v1.8.2",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Focused tests for password-reset privacy responses, 60-second resend cooldowns, and email-security retry metadata."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "resetEmail",
+      "value": ""
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "challengeId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Password Reset - First Request (200)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{resetEmail}}\"\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/accounts/auth/password-reset/"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 accepted', () => pm.response.to.have.status(200));",
+              "const b=pm.response.json();",
+              "pm.test('60-second resend contract', () => { pm.expect(b.resend_after_seconds).to.eql(60); pm.expect(b.resend_available_at).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Password Reset - Immediate Repeat (429)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{resetEmail}}\"\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/accounts/auth/password-reset/"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('429 cooldown', () => pm.response.to.have.status(429));",
+              "const b=pm.response.json();",
+              "pm.test('cooldown metadata', () => { pm.expect(b.error.code).to.eql('password_reset_cooldown'); pm.expect(b.error.retry_after_seconds).to.be.above(0); pm.expect(pm.response.headers.get('Retry-After')).to.exist; });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Email Verification - Request",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        },
+        "url": "{{baseUrl}}/api/v1/accounts/me/email-verification/request/"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 challenge', () => pm.response.to.have.status(200));",
+              "const b=pm.response.json(); if (b.challenge_id) pm.collectionVariables.set('challengeId', b.challenge_id);",
+              "pm.test('resend timing supplied', () => { pm.expect(b.resend_after).to.eql(60); pm.expect(b.resend_available_at).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Email Verification - Immediate Resend (429)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"challenge_id\": \"{{challengeId}}\"\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/accounts/me/email-verification/resend/"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('429 resend cooldown', () => pm.response.to.have.status(429));",
+              "const b=pm.response.json(); pm.test('retry metadata', () => pm.expect(b.error.retry_after_seconds).to.be.above(0));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

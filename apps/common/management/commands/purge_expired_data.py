@@ -4,7 +4,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from apps.accounts.models import TwoFactorChallenge
+from apps.accounts.models import SecurityEmailCooldown, TwoFactorChallenge
 from apps.calculations.models import Calculation, StoredCsvResult, StoredInputFile
 from apps.profiles.models import ProfileUpload
 
@@ -39,10 +39,14 @@ class Command(BaseCommand):
         challenge_count = challenge_qs.count()
         challenge_qs.delete()
 
+        cooldown_qs = SecurityEmailCooldown.objects.filter(updated_at__lt=security_cutoff)
+        cooldown_count = cooldown_qs.count()
+        cooldown_qs.delete()
+
         self.stdout.write(
             self.style.SUCCESS(
                 f"Purged {profile_count} expired profile records, {calculation_count} old calculation records, "
                 f"{orphan_input_count} unreferenced input files, {orphan_csv_count} unreferenced CSV files, "
-                f"and {challenge_count} expired 2FA challenge records."
+                f"{challenge_count} expired 2FA challenge records, and {cooldown_count} stale email cooldown records."
             )
         )

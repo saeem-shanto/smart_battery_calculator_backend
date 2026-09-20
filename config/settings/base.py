@@ -187,9 +187,17 @@ REST_FRAMEWORK = {
         "diagnostics": "10/hour",
         "auth": "10/minute",
         "registration": "5/hour",
-        "two_factor": "10/minute",
-        "email_verification": "5/hour",
-        "password_reset": "5/hour",
+        # Verification attempts and email sends use separate buckets so a
+        # legitimate OTP retry does not consume the email-send allowance.
+        "two_factor_verify": "15/minute",
+        "two_factor_send": "10/hour",
+        "email_verification_verify": "15/minute",
+        "email_verification_send": "10/hour",
+        # Public password-reset requests additionally have a durable per-email
+        # cooldown (default 60 seconds) below. This IP/user throttle is the
+        # broader abuse ceiling.
+        "password_reset_request": "10/hour",
+        "password_reset_confirm": "10/hour",
     },
 }
 
@@ -207,9 +215,9 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": (
         "Production API for Project N01. The original client MATLAB files are executed unchanged under GNU Octave. "
         "Retained input files and canonical CSV result artifacts are persisted in Supabase Storage; record metadata is persisted in PostgreSQL. "
-        "Account email verification is optional; password reset requires an email address associated with an active account."
+        "Account email verification is optional; password-reset requests use privacy-preserving generic responses, a 60-second resend cooldown, and broader abuse throttles."
     ),
-    "VERSION": "1.8.0",
+    "VERSION": "1.8.2",
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
     "SCHEMA_PATH_PREFIX": r"/api/v1",
@@ -316,6 +324,7 @@ else:
     DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default=_default_sender).strip()
 
 PASSWORD_RESET_TIMEOUT = env.int("PASSWORD_RESET_TIMEOUT_SECONDS", default=3600)
+PASSWORD_RESET_RESEND_SECONDS = env.int("PASSWORD_RESET_RESEND_SECONDS", default=60)
 TWO_FACTOR_OTP_TTL_SECONDS = env.int("TWO_FACTOR_OTP_TTL_SECONDS", default=600)
 TWO_FACTOR_OTP_RESEND_SECONDS = env.int("TWO_FACTOR_OTP_RESEND_SECONDS", default=60)
 TWO_FACTOR_OTP_MAX_ATTEMPTS = env.int("TWO_FACTOR_OTP_MAX_ATTEMPTS", default=5)
