@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 from django.core.cache import cache
+from django.utils import timezone as django_timezone
 
 
 class ProfileGenerationError(ValueError):
@@ -42,8 +43,31 @@ def postcode_coordinates(postcode: str, state: str):
     return result
 
 
+def _parse_utc_timestamp(stamp: object) -> datetime:
+    """Accept API UTC timestamps in ISO 8601 or Unix seconds/milliseconds."""
+    raw = str(stamp).strip()
+    try:
+        if raw.isdecimal() or (raw.startswith("-") and raw[1:].isdecimal()):
+            digits = len(raw.lstrip("-"))
+            if digits == 13:
+                seconds = int(raw) / 1000
+            elif digits == 10:
+                seconds = int(raw)
+            else:
+                raise ValueError("Unexpected numeric timestamp length")
+            return datetime.fromtimestamp(seconds, tz=timezone.utc)
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except (ValueError, TypeError, OverflowError, OSError) as exc:
+        raise ProfileGenerationError(
+            f"Renewables.ninja returned an invalid UTC timestamp: {raw[:40]!r}."
+        ) from exc
+
+
 def _annual_pv(lat: float, lon: float, zone: str, year: int, tilt: float, azimuth: float, loss: float):
-    key = f"ninja-pv-v2:{lat}:{lon}:{year}:{tilt}:{azimuth}:{loss}"
+    key = f"ninja-pv-v3:{lat}:{lon}:{zone}:{year}:{tilt}:{azimuth}:{loss}"
     saved = cache.get(key)
     if saved is not None:
         return saved
@@ -63,17 +87,40 @@ def _annual_pv(lat: float, lon: float, zone: str, year: int, tilt: float, azimut
     tz = ZoneInfo(zone)
     buckets: dict[tuple[int, int, int], list[float]] = {}
     for stamp, item in data.items():
+        # An API response may contain an invalid row. Identify the offending
+        # timestamp and field rather than hiding the underlying data issue.
+        dt = _parse_utc_timestamp(stamp)
+        if isinstance(item, dict):
+            # Renewables.ninja documents 'electricity' (kW). 'output' is a
+            # backward-compatible fallback, only when 'electricity' is absent.
+            field = "electricity" if "electricity" in item else "output"
+            if field not in item:
+                raise ProfileGenerationError(
+                    f"Renewables.ninja PV record at {stamp} has no electricity/output field "
+                    f"(available fields: {', '.join(sorted(map(str, item.keys())))[:140]})."
+                )
+            raw_value = item[field]
+        else:
+            raw_value = item
+        if raw_value is None or isinstance(raw_value, bool):
+            raise ProfileGenerationError(
+                f"Renewables.ninja PV record at {stamp} contains a missing or invalid generation value."
+            )
         try:
-            dt = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            local = dt.astimezone(tz)
-            value = float(item["electricity"] if isinstance(item, dict) and "electricity" in item else item.get("output") if isinstance(item, dict) else item)
-            if not math.isfinite(value) or value < 0:
-                raise ValueError("invalid PV")
-            buckets.setdefault((local.month, local.day, local.hour), []).append(value)
-        except (ValueError, KeyError, TypeError) as exc:
-            raise ProfileGenerationError("Renewables.ninja returned an invalid hourly PV value.") from exc
+            value = float(raw_value)
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise ProfileGenerationError(
+                f"Renewables.ninja PV record at {stamp} is not a numeric generation value "
+                f"(value type: {type(raw_value).__name__})."
+            ) from exc
+        if not math.isfinite(value) or value < 0:
+            raise ProfileGenerationError(
+                f"Renewables.ninja PV record at {stamp} contains a non-finite or negative generation value."
+            )
+        # Use the postcode timezone, not the OS clock timezone. This
+        # also respects historical daylight-saving rules for that region.
+        local = django_timezone.localtime(dt, timezone=tz)
+        buckets.setdefault((local.month, local.day, local.hour), []).append(value)
     result = []
     day = datetime(year, 1, 1)
     while day.year == year:
