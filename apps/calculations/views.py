@@ -201,8 +201,14 @@ class ClientWorkbookCalculationView(APIView):
         serializer = ClientWorkbookCalculationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         attrs = serializer.validated_data
-        upload = attrs["file"]
+        return self._run_upload(request, attrs, attrs["file"])
 
+    def _run_upload(self, request, attrs, upload, *, extra_warnings=None):
+        """Shared calculation path for both uploaded and internally generated files.
+
+        Preserves the same workbook parsing, consent/retention, optimisation,
+        storage, and response contract regardless of input method.
+        """
         raw_input = upload.read()
         if hasattr(upload, "seek"):
             upload.seek(0)
@@ -221,6 +227,7 @@ class ClientWorkbookCalculationView(APIView):
             )
 
         data, assumptions, warnings = build_client_workbook_engine_input(workbook, attrs)
+        warnings.extend(extra_warnings or [])
 
         # Privacy-first transient path. This deliberately happens before any
         # persistence or cache lookup so a no-retention request creates no
@@ -303,7 +310,7 @@ class ClientWorkbookCalculationView(APIView):
                     state=attrs.get("state", ""),
                     metadata=attrs.get("metadata", {}) or {},
                     status=Calculation.Status.PROCESSING,
-                    source_mode=Calculation.SourceMode.UPLOAD,
+                    source_mode=(Calculation.SourceMode.GENERATED if (attrs.get("metadata") or {}).get("workflow") == "generated_annual_profile" else Calculation.SourceMode.UPLOAD),
                     input_payload={
                         "original_filename": original_filename,
                         "detected_format": workbook.detected_format,

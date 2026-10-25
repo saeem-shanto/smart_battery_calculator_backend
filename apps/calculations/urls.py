@@ -1,4 +1,5 @@
 from django.urls import path
+from .generated_views import GenerateAnnualProfileView, GeneratedAnnualCalculationView
 
 from .views import (
     CalculationDetailView,
@@ -9,6 +10,8 @@ from .views import (
 )
 
 urlpatterns = [
+    path("generated-annual/", GeneratedAnnualCalculationView.as_view(), name="calculation-generated-annual"),
+    path("generate-annual-profile/", GenerateAnnualProfileView.as_view(), name="generate-annual-profile"),
     path("client-workbook/", ClientWorkbookCalculationView.as_view(), name="calculation-client-workbook"),
     path("<uuid:public_id>/", CalculationDetailView.as_view(), name="calculation-detail"),
     path("<uuid:public_id>/claim/", CalculationClaimView.as_view(), name="calculation-claim"),

@@ -105,6 +105,7 @@ class Calculation(models.Model):
 
     class SourceMode(models.TextChoices):
         UPLOAD = "upload", "Uploaded client workbook"
+        GENERATED = "generated", "Generated annual PV and load profile"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
