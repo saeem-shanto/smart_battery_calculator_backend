@@ -10,7 +10,6 @@ from zoneinfo import ZoneInfo
 
 import requests
 from django.core.cache import cache
-from django.utils import timezone as django_timezone
 
 
 class ProfileGenerationError(ValueError):
@@ -67,7 +66,7 @@ def _parse_utc_timestamp(stamp: object) -> datetime:
 
 
 def _annual_pv(lat: float, lon: float, zone: str, year: int, tilt: float, azimuth: float, loss: float):
-    key = f"ninja-pv-v3:{lat}:{lon}:{zone}:{year}:{tilt}:{azimuth}:{loss}"
+    key = f"ninja-pv-v2:{lat}:{lon}:{year}:{tilt}:{azimuth}:{loss}"
     saved = cache.get(key)
     if saved is not None:
         return saved
@@ -117,9 +116,7 @@ def _annual_pv(lat: float, lon: float, zone: str, year: int, tilt: float, azimut
             raise ProfileGenerationError(
                 f"Renewables.ninja PV record at {stamp} contains a non-finite or negative generation value."
             )
-        # Use the postcode timezone, not the OS clock timezone. This
-        # also respects historical daylight-saving rules for that region.
-        local = django_timezone.localtime(dt, timezone=tz)
+        local = dt.astimezone(tz)
         buckets.setdefault((local.month, local.day, local.hour), []).append(value)
     result = []
     day = datetime(year, 1, 1)
