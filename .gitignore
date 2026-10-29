@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 .venv/
 __pycache__/
 *.py[cod]
@@ -10,3 +12,4 @@ media/*
 .DS_Store
 smart-battery-backend-static-fixed.zip
 smart-battery-backend-cors-fixed.zip
+Archive.zip
