@@ -65,15 +65,27 @@ def _parse_utc_timestamp(stamp: object) -> datetime:
         ) from exc
 
 
+def ninja_azimuth(compass_deg: float, lat: float) -> float:
+    """Map user compass bearing to Renewables.ninja/GSEE's azimuth convention.
+
+    Users specify 0=N, 90=E, 180=S, 270=W. GSEE uses 180 for
+    equator-facing PV, so southern-hemisphere bearings rotate by 180.
+    """
+    bearing = float(compass_deg) % 360.0
+    return bearing if lat >= 0 else (bearing + 180.0) % 360.0
+
+
 def _annual_pv(lat: float, lon: float, zone: str, year: int, tilt: float, azimuth: float, loss: float):
-    key = f"ninja-pv-v2:{lat}:{lon}:{year}:{tilt}:{azimuth}:{loss}"
+    ninja_azim = ninja_azimuth(azimuth, lat)
+    # The new namespace prevents reuse of profiles cached with the old azimuth.
+    key = f"ninja-pv-v4:{lat}:{lon}:{year}:{tilt}:{ninja_azim}:{loss}"
     saved = cache.get(key)
     if saved is not None:
         return saved
     token = os.environ.get("RENEWABLES_NINJA_API_TOKEN", "").strip()
     if not token:
         raise ProfileGenerationError("RENEWABLES_NINJA_API_TOKEN is not configured on the Django server.")
-    params = {"lat": lat, "lon": lon, "date_from": f"{year}-01-01", "date_to": f"{year}-12-31", "dataset": "merra2", "capacity": 5, "system_loss": loss, "tracking": 0, "tilt": tilt, "azim": azimuth, "format": "json", "local_time": "false"}
+    params = {"lat": lat, "lon": lon, "date_from": f"{year}-01-01", "date_to": f"{year}-12-31", "dataset": "merra2", "capacity": 5, "system_loss": loss, "tracking": 0, "tilt": tilt, "azim": ninja_azim, "format": "json", "local_time": "false"}
     try:
         response = requests.get("https://www.renewables.ninja/api/data/pv", params=params, headers={"Authorization": f"Token {token}"}, timeout=90)
         response.raise_for_status()
