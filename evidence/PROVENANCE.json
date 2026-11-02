@@ -1,0 +1,17 @@
+{
+  "source_repository": "https://github.com/saeem-shanto/smart_battery_calculator_backend",
+  "branch": "main",
+  "retrieval_date": "2026-11-02",
+  "description": "Selected actual repository files copied without modification. Git blob SHA-1 verified against fetched repository tree.",
+  "files": {
+    "source_integrity/SOURCE_INTEGRITY.md": "SOURCE_INTEGRITY.md",
+    "logs/octave_execution.log": "matlab_source_v1/octave_execution.log",
+    "reference_results/octave_result.csv": "matlab_source_v1/octave_result.csv",
+    "reference_results/Results_RPAtrail400.csv": "matlab_source_v1/Results_RPAtrail400.csv",
+    "tests_snapshot/compare_parity.py": "matlab_source_v1/compare_parity.py",
+    "tests_snapshot/test_ninja_timestamps.py": "apps/calculations/tests_generated/test_ninja_timestamps.py",
+    "tests_snapshot/test_profile_generation.py": "apps/calculations/tests_generated/test_profile_generation.py",
+    "tests_snapshot/test_single_request_workflow.py": "apps/calculations/tests_generated/test_single_request_workflow.py",
+    "tests_snapshot/test_updated_model_contract.py": "tests/test_updated_model_contract.py"
+  }
+}
